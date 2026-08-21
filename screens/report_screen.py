@@ -29,6 +29,10 @@ from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_exc
 from ui_style import ACCENT, TEXT_DARK, m3_field, screen_header, section_card, section_label, tonal_button, with_bg
 from widgets.line_chart import LineChart
 
+# Bumped by hand on each delivered build -- shown at the bottom of this screen so
+# a build can be confirmed at a glance instead of guessed from behavior alone.
+BUILD_LABEL = "2026-08-21-a"
+
 
 def export_dir(app) -> str:
     """The app's external files directory on Android (no runtime permission
@@ -103,6 +107,10 @@ class ReportScreen(MDScreen):
         form.add_widget(MDLabel(
             text=DISCLAIMER, theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(90),
+        ))
+        form.add_widget(MDLabel(
+            text=f"Build {BUILD_LABEL}", font_style="Caption", halign="center",
+            theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(20),
         ))
 
         scroll.add_widget(form)
@@ -195,6 +203,20 @@ class ReportScreen(MDScreen):
                 f"Could not render the {label} chart image "
                 "(the device's graphics driver returned no image data after 5 attempts)."
             )
+
+        # export_as_image() renders onto a transparent Fbo (Kivy clears it with
+        # alpha 0) -- fine for the live in-app chart, which sits on a themed/
+        # tinted screen background on purpose, but unreadable once the PNG lands
+        # on a colored PDF/PPTX page: the chart's dark axis-label text can end up
+        # nearly invisible against a dark slide background. Flatten onto opaque
+        # white here, at export time only, so the exported image always has good
+        # contrast regardless of what it's placed on.
+        from PIL import Image as PILImage
+        with PILImage.open(image_path) as im:
+            flattened = PILImage.new("RGB", im.size, "white")
+            flattened.paste(im, mask=im.convert("RGBA").split()[3])
+            flattened.save(image_path)
+
         return image_path
 
     def _render_scenario_charts(self, data: dict) -> dict:
@@ -260,9 +282,8 @@ class ReportScreen(MDScreen):
                 generate_csv(path, data)
             elif kind == "pptx":
                 chart_images = self._render_scenario_charts(data)
-                roi_chart_image = self._render_roi_chart(data)
-                chart_image_paths = list(chart_images.values()) + [roi_chart_image]
-                generate_pptx(path, data, chart_images=chart_images, roi_chart_image=roi_chart_image)
+                chart_image_paths = list(chart_images.values())
+                generate_pptx(path, data, chart_images=chart_images)
         except Exception as exc:
             self._show_message("Export Failed", f"Could not generate the {kind.upper()} report:\n{exc}")
             return

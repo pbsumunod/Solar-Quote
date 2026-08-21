@@ -53,6 +53,8 @@ PPTX_WEATHER_THEME = {
     "Rainy": ("294D80", "84B3D9"),
 }
 
+ROI_SLIDE_PHOTO = "assets/images/roi_slide.jpg"
+
 
 # --- Excel export --------------------------------------------------------------
 
@@ -374,16 +376,11 @@ def _blank_slide(prs):
     return prs.slides.add_slide(prs.slide_layouts[6])
 
 
-def generate_pptx(
-    path: str, data: dict, chart_images: dict | None = None, roi_chart_image: str | None = None,
-) -> None:
+def generate_pptx(path: str, data: dict, chart_images: dict | None = None) -> None:
     """chart_images: optional {scenario_name: png_path} (see report_screen.py's
     _render_scenario_chart_png) -- for each scenario present in both this dict and
     data["simulation"]["scenario_results"], adds one slide with that scenario's hourly
-    chart image and a summary of its totals underneath, in SCENARIO_ORDER.
-    roi_chart_image: optional path to a pre-rendered PNG of the ROI screen's
-    cumulative cash-flow chart (see report_screen.py's _render_roi_chart) --
-    adds one slide with that chart, right after the Savings & ROI slide."""
+    chart image and a summary of its totals underneath, in SCENARIO_ORDER."""
     from pptx import Presentation
     from pptx.util import Inches
 
@@ -496,19 +493,17 @@ def generate_pptx(
         _add_card(slide, Inches(0.7), Inches(top), Inches(6.0), Inches(0.95), card_title, value, "2F9E44")
         top += 1.1
 
-    # ROI cash-flow chart
-    if roi_chart_image:
-        slide = _blank_slide(prs)
-        _set_gradient_bg(slide, *PPTX_THEME["savings"], angle=45)
-        _add_textbox(slide, Inches(0.6), Inches(0.35), Inches(9), Inches(0.7),
-                     [("Cumulative Cash Flow", 28, "FFFFFF", True)])
-        slide.shapes.add_picture(roi_chart_image, Inches(0.6), Inches(1.15), width=Inches(12.1))
-        _add_card(slide, Inches(0.6), Inches(6.15), Inches(3.85), Inches(1.05),
-                   "System Cost", f"PHP {roi['system_cost']:,.0f}", "2F9E44")
-        _add_card(slide, Inches(4.65), Inches(6.15), Inches(3.85), Inches(1.05),
-                   "Payback Period", payback, "2F9E44")
-        _add_card(slide, Inches(8.7), Inches(6.15), Inches(3.85), Inches(1.05),
-                   f"{len(roi['projection_rows'])}-Year Net Benefit", f"PHP {roi['net_benefit']:,.0f}", "2F9E44")
+    # Savings summary -- full-bleed photo background with the headline numbers
+    # overlaid as cards (a data chart here didn't read well against a themed
+    # slide background; a photo + the key figures reads better as a closer).
+    slide = _blank_slide(prs)
+    slide.shapes.add_picture(ROI_SLIDE_PHOTO, 0, 0, width=prs.slide_width, height=prs.slide_height)
+    _add_card(slide, Inches(0.6), Inches(6.15), Inches(3.85), Inches(1.05),
+               "System Cost", f"PHP {roi['system_cost']:,.0f}", "2F9E44")
+    _add_card(slide, Inches(4.65), Inches(6.15), Inches(3.85), Inches(1.05),
+               "Payback Period", payback, "2F9E44")
+    _add_card(slide, Inches(8.7), Inches(6.15), Inches(3.85), Inches(1.05),
+               f"{len(roi['projection_rows'])}-Year Net Benefit", f"PHP {roi['net_benefit']:,.0f}", "2F9E44")
 
     # Closing / disclaimer
     slide = _blank_slide(prs)
