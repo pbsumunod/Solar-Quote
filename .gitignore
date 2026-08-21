@@ -1,0 +1,13 @@
+# Android build artifacts
+.buildozer/
+bin/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor/OS
+.vscode/
+.DS_Store
