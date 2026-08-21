@@ -162,15 +162,27 @@ class ReportScreen(MDScreen):
     def _render_scenario_charts(self, data: dict) -> dict:
         """Renders each weather scenario's Simulation-tab chart to a standalone PNG
         (same series/colors as the live chart, via logic/chart_series.py) for the
-        PowerPoint export. Uses Kivy's export_to_png on an off-tree LineChart, which
-        renders into its own offscreen Fbo -- it doesn't need to be added to the
-        Window to work. Images are written under a scratch subfolder of user_data_dir
-        and removed again in _cleanup_chart_images once the pptx has embedded them."""
+        PowerPoint export. Uses Kivy's export_as_image on an off-tree LineChart,
+        which renders into its own offscreen Fbo -- it doesn't need to be added to
+        the Window to work. Images are written under a scratch subfolder of
+        user_data_dir and removed again in _cleanup_chart_images once the pptx has
+        embedded them.
+
+        export_to_png()/Image.save() can fail *silently* (returns False, raises
+        nothing) if the GPU texture readback comes back with no pixel data --
+        observed on-device even though it's reliable on desktop GPU drivers. We
+        call the lower-level save() directly so we can check its return value and
+        retry with fresh idle-pumped frames rather than quietly handing pptx a
+        path with nothing behind it (which then fails much later, confusingly,
+        inside python-pptx's own file open)."""
         app = MDApp.get_running_app()
         battery_total_kwh = data["battery"]["total_kwh"]
         scenario_results = data["simulation"]["scenario_results"]
         tmp_dir = os.path.join(app.user_data_dir, "chart_tmp")
         os.makedirs(tmp_dir, exist_ok=True)
+
+        from kivy.base import EventLoop
+        EventLoop.ensure_window()
 
         images = {}
         for name in SCENARIO_ORDER:
@@ -180,15 +192,23 @@ class ReportScreen(MDScreen):
             series, x_labels, _hours = series_for_result(result, battery_total_kwh)
             chart = LineChart(size_hint=(None, None), size=(1600, 700))
             chart.set_data(series, x_labels)
-            # The axis tick Labels' textures are generated on a Clock trigger, not
-            # synchronously in set_data() -- without pumping a few idle frames first,
-            # export_to_png captures the chart lines but with blank axis labels.
-            from kivy.base import EventLoop
-            EventLoop.ensure_window()
-            for _ in range(5):
-                EventLoop.idle()
             image_path = os.path.join(tmp_dir, f"chart_{name.lower()}.png")
-            chart.export_to_png(image_path)
+
+            saved = False
+            for _attempt in range(5):
+                # The axis tick Labels' textures are generated on a Clock trigger,
+                # and the GPU needs a moment to finish rendering the Fbo -- pump a
+                # few idle frames before each attempt, not just the first.
+                for _ in range(3):
+                    EventLoop.idle()
+                saved = chart.export_as_image().save(image_path, flipped=False)
+                if saved and os.path.exists(image_path):
+                    break
+            if not saved:
+                raise RuntimeError(
+                    f"Could not render the {name} scenario chart image "
+                    "(the device's graphics driver returned no image data after 5 attempts)."
+                )
             images[name] = image_path
         return images
 
