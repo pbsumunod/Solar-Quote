@@ -36,7 +36,7 @@ from widgets.line_chart import LineChart
 
 # Bumped by hand on each delivered build -- shown at the bottom of this screen so
 # a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-08-21-e-diag"
+BUILD_LABEL = "2026-08-21-k"
 
 MIME_TYPES = {
     "pdf": "application/pdf",
@@ -219,6 +219,11 @@ class ReportScreen(MDScreen):
                 f"Could not render the {label} chart image "
                 "(the device's graphics driver returned no image data after 5 attempts)."
             )
+        if not os.path.exists(image_path):
+            raise RuntimeError(
+                f"The {label} chart image vanished right after being saved "
+                f"(expected at {image_path})."
+            )
 
         # export_as_image() renders onto a transparent Fbo (Kivy clears it with
         # alpha 0) -- fine for the live in-app chart, which sits on a themed/
@@ -280,33 +285,46 @@ class ReportScreen(MDScreen):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def _export(self, kind: str) -> None:
-        app = MDApp.get_running_app()
-        data = self._collect_data()
-        out_dir = export_dir(app)
-        filenames = {"pdf": "solar_proposal.pdf", "excel": "solar_proposal.xlsx",
-                     "csv": "solar_proposal.csv", "pptx": "solar_proposal.pptx"}
-        path = os.path.join(out_dir, filenames[kind])
-        chart_image_paths = []
-        try:
-            if kind == "pdf":
-                roi_chart_image = self._render_roi_chart(data)
-                chart_image_paths = [roi_chart_image]
-                generate_pdf(path, data, roi_chart_image=roi_chart_image)
-            elif kind == "excel":
-                generate_excel(path, data)
-            elif kind == "csv":
-                generate_csv(path, data)
-            elif kind == "pptx":
-                chart_images = self._render_scenario_charts(data)
-                chart_image_paths = list(chart_images.values())
-                generate_pptx(path, data, chart_images=chart_images)
-        except Exception as exc:
-            self._show_message("Export Failed", f"Could not generate the {kind.upper()} report:\n{exc}")
+        # _save_chart_png() pumps EventLoop.idle() while it waits on the GPU,
+        # which also dispatches any queued touch events -- a double-tap on an
+        # export button can otherwise re-enter this method mid-render, and
+        # whichever call finishes first deletes chart_tmp/ (see
+        # _cleanup_chart_images) out from under the other one still rendering.
+        if getattr(self, "_exporting", False):
             return
+        self._exporting = True
+        try:
+            app = MDApp.get_running_app()
+            data = self._collect_data()
+            out_dir = export_dir(app)
+            filenames = {"pdf": "solar_proposal.pdf", "excel": "solar_proposal.xlsx",
+                         "csv": "solar_proposal.csv", "pptx": "solar_proposal.pptx"}
+            path = os.path.join(out_dir, filenames[kind])
+            chart_image_paths = []
+            try:
+                if kind == "pdf":
+                    roi_chart_image = self._render_roi_chart(data)
+                    scenario_images = self._render_scenario_charts(data)
+                    chart_image_paths = [roi_chart_image] + list(scenario_images.values())
+                    generate_pdf(path, data, roi_chart_image=roi_chart_image, scenario_images=scenario_images)
+                elif kind == "excel":
+                    generate_excel(path, data)
+                elif kind == "csv":
+                    generate_csv(path, data)
+                elif kind == "pptx":
+                    roi_chart_image = self._render_roi_chart(data)
+                    chart_images = self._render_scenario_charts(data)
+                    chart_image_paths = [roi_chart_image] + list(chart_images.values())
+                    generate_pptx(path, data, chart_images=chart_images, roi_chart_image=roi_chart_image)
+            except Exception as exc:
+                self._show_message("Export Failed", f"Could not generate the {kind.upper()} report:\n{exc}")
+                return
+            finally:
+                if chart_image_paths:
+                    self._cleanup_chart_images(chart_image_paths)
+            self._show_export_success(path, MIME_TYPES[kind], data["client"].get("email", ""))
         finally:
-            if chart_image_paths:
-                self._cleanup_chart_images(chart_image_paths)
-        self._show_export_success(path, MIME_TYPES[kind], data["client"].get("email", ""))
+            self._exporting = False
 
     def _show_message(self, title: str, text: str) -> None:
         if self._dialog:
@@ -355,13 +373,18 @@ class ReportScreen(MDScreen):
         try:
             from jnius import autoclass, cast
             Intent = autoclass("android.content.Intent")
+            String = autoclass("java.lang.String")
             activity, uri = self._content_uri_for(path)
 
             intent = Intent(Intent.ACTION_SEND)
             intent.setType(mime_type)
             intent.putExtra(Intent.EXTRA_STREAM, cast("android.os.Parcelable", uri))
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            activity.startActivity(Intent.createChooser(intent, "Share Report"))
+            # createChooser's title param is typed CharSequence; pyjnius's static
+            # overload resolution won't match a plain Python str against it (it
+            # only auto-coerces to a concrete String-typed param), so wrap it as
+            # a real java.lang.String -- CharSequence-compatible instance -- first.
+            activity.startActivity(Intent.createChooser(intent, String("Share Report")))
         except Exception as exc:
             self._show_message("Share Failed", f"Could not open the share sheet:\n{exc}")
 
@@ -379,6 +402,7 @@ class ReportScreen(MDScreen):
         try:
             from jnius import autoclass, cast
             Intent = autoclass("android.content.Intent")
+            String = autoclass("java.lang.String")
             activity, uri = self._content_uri_for(path)
 
             intent = Intent(Intent.ACTION_SEND)
@@ -387,7 +411,9 @@ class ReportScreen(MDScreen):
             intent.putExtra(Intent.EXTRA_SUBJECT, "Your Solar System Proposal")
             intent.putExtra(Intent.EXTRA_STREAM, cast("android.os.Parcelable", uri))
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            activity.startActivity(Intent.createChooser(intent, "Send via Email"))
+            # See _share_file's comment: createChooser's title param is typed
+            # CharSequence, which pyjnius won't resolve from a plain Python str.
+            activity.startActivity(Intent.createChooser(intent, String("Send via Email")))
         except Exception as exc:
             self._show_message("Email Failed", f"Could not open an email app:\n{exc}")
 

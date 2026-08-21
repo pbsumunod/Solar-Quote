@@ -7,7 +7,7 @@ Discharge floor). Y-axis reference values are shown on both the left and right
 edges. Redraws whenever the widget is resized or set_data() is called again.
 """
 
-from kivy.graphics import Color, Ellipse, Line
+from kivy.graphics import Color, Ellipse, Line, Mesh
 from kivy.metrics import dp
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
@@ -40,7 +40,7 @@ def _y_reference_values(y_min: float, y_max: float, count: int = 4) -> list[floa
 class LineChart(Widget):
     LEFT_MARGIN = dp(36)
     RIGHT_MARGIN = dp(34)
-    TOP_MARGIN = dp(6)
+    TOP_MARGIN = dp(20)
     BOTTOM_MARGIN = dp(24)
 
     def __init__(self, **kwargs):
@@ -123,15 +123,7 @@ class LineChart(Widget):
             if self._fill_index is not None and 0 <= self._fill_index < len(self._series):
                 values = self._series[self._fill_index][0]
                 pts = [px(i, v) for i, v in enumerate(values)]
-                substeps = 6
-                for a, b in zip(pts, pts[1:]):
-                    for s in range(substeps):
-                        t0, t1 = s / substeps, (s + 1) / substeps
-                        xa, ya = a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0
-                        xb, yb = a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1
-                        xm, ym = (xa + xb) / 2, (ya + yb) / 2
-                        Color(*(FILL_POS_COLOR if ym >= y_zero else FILL_NEG_COLOR))
-                        Line(points=[xm, y_zero, xm, ym], width=(xb - xa) + 1)
+                self._draw_area_fill(pts, y_zero)
 
             for values, color, dashed in self._series:
                 Color(*color)
@@ -169,8 +161,8 @@ class LineChart(Widget):
             lbl = Label(
                 text=self._vline.get("label", ""), font_size="9sp",
                 color=self._vline.get("color", (0.4, 0.25, 0.6, 1)),
-                size_hint=(None, None), size=(dp(70), dp(14)),
-                pos=(vx - dp(5), y1 - dp(2)),
+                size_hint=(None, None), size=(dp(90), dp(14)),
+                pos=(vx - dp(10), y1 + dp(3)),
             )
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
@@ -197,6 +189,45 @@ class LineChart(Widget):
             )
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
+
+    def _draw_area_fill(self, pts: list[tuple[float, float]], y_zero: float) -> None:
+        """Fills the area between the curve and the zero line as solid triangles
+        (a proper polygon fill), not the previous approach of packing many thin
+        adjacent vertical Line strokes side by side to approximate a fill -- that
+        produced a visibly jagged/hatched edge once exported to PNG at chart
+        resolution. Split into same-signed runs (inserting an interpolated vertex
+        exactly at each zero-crossing) so the green/red split stays exact."""
+        dense_pts = [pts[0]]
+        for a, b in zip(pts, pts[1:]):
+            if (a[1] - y_zero) * (b[1] - y_zero) < 0:
+                t = (y_zero - a[1]) / (b[1] - a[1])
+                dense_pts.append((a[0] + (b[0] - a[0]) * t, y_zero))
+            dense_pts.append(b)
+
+        runs: list[list[tuple[float, float]]] = []
+        current = [dense_pts[0]]
+        for p in dense_pts[1:]:
+            current.append(p)
+            if p[1] == y_zero:
+                runs.append(current)
+                current = [p]
+        if len(current) > 1:
+            runs.append(current)
+
+        for run in runs:
+            if len(run) < 2:
+                continue
+            avg_y = sum(p[1] for p in run) / len(run)
+            vertices = []
+            for x, y in run:
+                vertices.extend([x, y_zero, 0, 0])
+                vertices.extend([x, y, 0, 0])
+            indices = []
+            for i in range(len(run) - 1):
+                base = 2 * i
+                indices.extend([base, base + 1, base + 2, base + 1, base + 2, base + 3])
+            Color(*(FILL_POS_COLOR if avg_y >= y_zero else FILL_NEG_COLOR))
+            Mesh(vertices=vertices, indices=indices, mode="triangles")
 
     def _add_y_label(self, text: str, x: float, y: float, side: str = "left") -> None:
         """y is the exact pixel height the value maps to on the plot -- the label

@@ -32,10 +32,13 @@ DISCLAIMER = (
 
 SCENARIO_ORDER = ["Sunny", "Cloudy", "Rainy"]
 
-PRIMARY_RGB = (43, 108, 176)
-TEXT_RGB = (31, 41, 51)
-MUTED_RGB = (107, 118, 132)
-BAND_RGB = (244, 246, 248)
+# Matches ui_style.py's Client Info tab palette (ACCENT/ON_SURFACE/ON_SURFACE_VARIANT/
+# SURFACE_CONTAINER) so the PDF reads as the same brand as the app itself, rather than
+# the unrelated blue this report used before.
+PRIMARY_RGB = (46, 126, 52)     # ui_style.ACCENT (#2E7E34)
+TEXT_RGB = (28, 28, 24)         # ui_style.ON_SURFACE
+MUTED_RGB = (72, 71, 62)        # ui_style.ON_SURFACE_VARIANT
+BAND_RGB = (243, 241, 234)      # ui_style.SURFACE_CONTAINER
 
 PPTX_THEME = {
     "cover": ("0F2A4A", "F4A300"),
@@ -211,10 +214,17 @@ def _pdf_kv_table(pdf, pairs: list[tuple[str, str]]) -> None:
     pdf.ln(4)
 
 
-def generate_pdf(path: str, data: dict, roi_chart_image: str | None = None) -> None:
+def generate_pdf(
+    path: str, data: dict, roi_chart_image: str | None = None, scenario_images: dict | None = None,
+) -> None:
     """roi_chart_image: optional path to a pre-rendered PNG of the ROI screen's
     cumulative cash-flow chart (see report_screen.py's _render_roi_chart) --
-    embedded right after the Savings & ROI table if provided."""
+    embedded right after the Savings & ROI table if provided.
+
+    scenario_images: optional {scenario_name: png_path} (see report_screen.py's
+    _render_scenario_charts) -- for each scenario present in both this dict and
+    data["simulation"]["scenario_results"], adds a page with that scenario's
+    hourly chart and a summary of its totals, in SCENARIO_ORDER."""
     from fpdf import FPDF
 
     client = data["client"]
@@ -222,6 +232,7 @@ def generate_pdf(path: str, data: dict, roi_chart_image: str | None = None) -> N
     solar = data["solar"]
     battery = data["battery"]
     system_design = data["system_design"]
+    simulation = data["simulation"]
     roi = data["roi"]
 
     pdf = FPDF()
@@ -262,6 +273,40 @@ def generate_pdf(path: str, data: dict, roi_chart_image: str | None = None) -> N
                       f"(efficiency {system_design['efficiency_pct']:.0f}%)"),
     ])
 
+    _pdf_heading(pdf, "Engineering Notes")
+    pdf.set_font("Helvetica", "", 10)
+    for ok, text in system_design["warnings"]:
+        pdf.set_text_color(*(46, 158, 68) if ok else (192, 57, 43))
+        mark = "[OK]" if ok else "[!]"
+        # Explicit width (not 0/"auto") -- width=0 hits an fpdf2 edge case here
+        # after several page-break-adjacent calls ("not enough horizontal space").
+        # new_x/new_y: multi_cell()'s own default is new_x=XPos.RIGHT, which for a
+        # full-page-width cell leaves the cursor sitting at the *right* margin --
+        # the next line then started printing from there and ran off the page
+        # edge instead of stacking underneath. Force it back to the left margin.
+        pdf.multi_cell(pdf.epw, 6, f"{mark} {text}", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    if scenario_images:
+        for name in SCENARIO_ORDER:
+            image_path = scenario_images.get(name)
+            result = simulation["scenario_results"].get(name)
+            if not image_path or result is None:
+                continue
+            pdf.add_page()
+            _pdf_heading(pdf, f"{name} Day Simulation")
+            pdf.image(image_path, w=pdf.epw)
+            pdf.ln(4)
+            battery_usage = result.total_battery_charge_kwh + result.total_battery_discharge_kwh
+            excess = result.total_grid_export_kwh + result.total_curtailed_kwh
+            _pdf_kv_table(pdf, [
+                ("Solar Production", f"{result.total_solar_kwh:.1f} kWh"),
+                ("Grid Purchase", f"{result.total_grid_purchase_kwh:.1f} kWh"),
+                ("Battery Usage", f"{battery_usage:.1f} kWh"),
+                ("Excess Energy", f"{excess:.1f} kWh"),
+            ])
+
+    pdf.add_page()
     _pdf_heading(pdf, "Savings & ROI")
     payback = f"{roi['payback_years']:.1f} years" if roi["payback_years"] is not None else "Not within horizon"
     _pdf_kv_table(pdf, [
@@ -277,26 +322,26 @@ def generate_pdf(path: str, data: dict, roi_chart_image: str | None = None) -> N
         pdf.image(roi_chart_image, w=pdf.epw)
         pdf.ln(4)
 
-    _pdf_heading(pdf, "Engineering Notes")
-    pdf.set_font("Helvetica", "", 10)
-    for ok, text in system_design["warnings"]:
-        pdf.set_text_color(*(46, 158, 68) if ok else (192, 57, 43))
-        mark = "[OK]" if ok else "[!]"
-        # Explicit width (not 0/"auto") -- width=0 hits an fpdf2 edge case here
-        # after several page-break-adjacent calls ("not enough horizontal space").
-        pdf.multi_cell(pdf.epw, 6, f"{mark} {text}")
-    pdf.ln(4)
-
     pdf.add_page()
     _pdf_heading(pdf, "Financial Projection")
-    headers = ["Year", "Rate", "Cost w/o", "Cost w/", "Savings", "Maint.", "Net", "Cumulative"]
-    col_w = (pdf.w - pdf.l_margin - pdf.r_margin) / len(headers)
-    with pdf.table(col_widths=[col_w] * len(headers), text_align="RIGHT") as table:
+    from fpdf.fonts import FontFace
+
+    headers = ["Year", "Rate", "Grid Cost\n(No Solar)", "Grid Cost\n(Solar)", "Savings", "Maint.",
+               "Net Savings", "Cumulative"]
+    weights = [0.6, 0.85, 1.3, 1.3, 1.05, 0.85, 1.15, 1.3]
+    avail_w = pdf.w - pdf.l_margin - pdf.r_margin
+    col_widths = [avail_w * w / sum(weights) for w in weights]
+
+    pdf.set_font("Helvetica", "", 9)
+    heading_style = FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=PRIMARY_RGB)
+    band_style = FontFace(fill_color=BAND_RGB)
+    with pdf.table(col_widths=col_widths, text_align="RIGHT", headings_style=heading_style,
+                   line_height=6.5, borders_layout="HORIZONTAL_LINES") as table:
         row = table.row()
         for h in headers:
             row.cell(h)
-        for r in roi["projection_rows"]:
-            row = table.row()
+        for i, r in enumerate(roi["projection_rows"]):
+            row = table.row(style=band_style if i % 2 == 1 else None)
             row.cell(str(r.year))
             row.cell(f"{r.electricity_rate:.2f}")
             row.cell(f"{r.grid_cost_without_solar:,.0f}")
@@ -376,11 +421,17 @@ def _blank_slide(prs):
     return prs.slides.add_slide(prs.slide_layouts[6])
 
 
-def generate_pptx(path: str, data: dict, chart_images: dict | None = None) -> None:
+def generate_pptx(
+    path: str, data: dict, chart_images: dict | None = None, roi_chart_image: str | None = None,
+) -> None:
     """chart_images: optional {scenario_name: png_path} (see report_screen.py's
     _render_scenario_chart_png) -- for each scenario present in both this dict and
     data["simulation"]["scenario_results"], adds one slide with that scenario's hourly
-    chart image and a summary of its totals underneath, in SCENARIO_ORDER."""
+    chart image and a summary of its totals underneath, in SCENARIO_ORDER.
+
+    roi_chart_image: optional path to a pre-rendered PNG of the ROI screen's
+    cumulative cash-flow chart (see report_screen.py's _render_roi_chart) --
+    added as its own slide, right after the Savings & ROI cards slide."""
     from pptx import Presentation
     from pptx.util import Inches
 
@@ -460,7 +511,11 @@ def generate_pptx(path: str, data: dict, chart_images: dict | None = None) -> No
             _set_gradient_bg(slide, *theme, angle=90)
             _add_textbox(slide, Inches(0.6), Inches(0.35), Inches(9), Inches(0.7),
                          [(f"{name} Day Simulation", 28, "1F2933", True)])
-            slide.shapes.add_picture(image_path, Inches(0.6), Inches(1.15), width=Inches(12.1))
+            # Width chosen (not the slide's full 12.1in span) so the chart's own
+            # height -- derived from its 1600x700 source aspect ratio -- stays
+            # clear of the cards below at y=6.15in, instead of its bottom axis
+            # labels running underneath them.
+            slide.shapes.add_picture(image_path, Inches(0.6), Inches(1.15), width=Inches(11.0))
 
             battery_usage = result.total_battery_charge_kwh + result.total_battery_discharge_kwh
             excess = result.total_grid_export_kwh + result.total_curtailed_kwh
@@ -492,6 +547,15 @@ def generate_pptx(path: str, data: dict, chart_images: dict | None = None) -> No
     for card_title, value in cards:
         _add_card(slide, Inches(0.7), Inches(top), Inches(6.0), Inches(0.95), card_title, value, "2F9E44")
         top += 1.1
+
+    # Cumulative cash-flow chart -- its own slide so the ROI trend line is visible
+    # (the following photo slide covers the headline numbers, not the trend itself).
+    if roi_chart_image:
+        slide = _blank_slide(prs)
+        _set_gradient_bg(slide, *PPTX_THEME["savings"], angle=45)
+        _add_textbox(slide, Inches(0.6), Inches(0.35), Inches(9), Inches(0.7),
+                     [("Cumulative Cash Flow", 28, "FFFFFF", True)])
+        slide.shapes.add_picture(roi_chart_image, Inches(0.6), Inches(1.15), width=Inches(12.1))
 
     # Savings summary -- full-bleed photo background with the headline numbers
     # overlaid as cards (a data chart here didn't read well against a themed
