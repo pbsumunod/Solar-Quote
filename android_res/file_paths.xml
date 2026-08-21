@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Whitelists the app's external-files directory (where report_screen.py's
+     export_dir() already saves PDF/Excel/CSV/PPTX exports) for FileProvider
+     sharing. See p4a_hooks.py, which wires the matching provider element
+     into AndroidManifest.xml at build time. -->
+<paths>
+    <external-files-path name="exports" path="." />
+</paths>

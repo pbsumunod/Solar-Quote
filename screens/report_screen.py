@@ -4,11 +4,16 @@ Branding + preview + export group + disclaimer, same structure as desktop.
 Company logo upload is dropped (no native file picker on Android without extra
 work) -- company name only for now. Exports save into the app's external files
 directory (Android/data/<package>/files/ on-device -- reachable via a file
-manager or USB-to-PC, no runtime permission needed) rather than using a native
-"Save As" dialog or a Share sheet, since python-for-android's default template
-has no FileProvider configured for sharing files to other apps (that would need
-untested custom AndroidManifest/XML work). The exact save path is shown after
-each export. See logic/reports.py for the actual PDF/Excel/CSV/PPTX generation.
+manager or USB-to-PC, no runtime permission needed). After a successful export,
+the confirmation dialog offers Share (Android's native share sheet -- WhatsApp,
+Viber, Telegram, Drive, Bluetooth, whatever's installed) and Email to Client
+(opens the phone's email app with the client's address from the Client Info
+screen pre-filled and the file attached, letting the installer review before
+sending -- no credentials stored, no automatic sending). Both go through a
+FileProvider (android_res/file_paths.xml + the <provider> injected by
+p4a_hooks.py at build time), since Android blocks apps from handing each other
+raw file:// paths. See logic/reports.py for the actual PDF/Excel/CSV/PPTX
+generation.
 """
 
 import os
@@ -31,7 +36,18 @@ from widgets.line_chart import LineChart
 
 # Bumped by hand on each delivered build -- shown at the bottom of this screen so
 # a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-08-21-a"
+BUILD_LABEL = "2026-08-21-c"
+
+MIME_TYPES = {
+    "pdf": "application/pdf",
+    "excel": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "csv": "text/csv",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+# Must exactly match p4a_hooks.py's FILEPROVIDER_AUTHORITY (package.domain +
+# "." + package.name + ".fileprovider" from buildozer.spec).
+FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
 
 def export_dir(app) -> str:
@@ -290,7 +306,7 @@ class ReportScreen(MDScreen):
         finally:
             if chart_image_paths:
                 self._cleanup_chart_images(chart_image_paths)
-        self._show_message("Exported", f"Saved to:\n{path}")
+        self._show_export_success(path, MIME_TYPES[kind], data["client"].get("email", ""))
 
     def _show_message(self, title: str, text: str) -> None:
         if self._dialog:
@@ -300,6 +316,80 @@ class ReportScreen(MDScreen):
             buttons=[MDFlatButton(text="OK", text_color=ACCENT, on_release=lambda *_: self._dialog.dismiss())],
         )
         self._dialog.open()
+
+    def _show_export_success(self, path: str, mime_type: str, client_email: str) -> None:
+        buttons = []
+        if platform == "android":
+            buttons.append(MDFlatButton(
+                text="EMAIL TO CLIENT", text_color=ACCENT,
+                on_release=lambda *_: self._email_to_client(path, mime_type, client_email),
+            ))
+            buttons.append(MDFlatButton(
+                text="SHARE", text_color=ACCENT,
+                on_release=lambda *_: self._share_file(path, mime_type),
+            ))
+        buttons.append(MDFlatButton(text="OK", text_color=ACCENT, on_release=lambda *_: self._dialog.dismiss()))
+
+        if self._dialog:
+            self._dialog.dismiss()
+        self._dialog = MDDialog(title="Exported", text=f"Saved to:\n{path}", buttons=buttons)
+        self._dialog.open()
+
+    def _content_uri_for(self, path: str):
+        """Wraps a plain file path as a content:// Uri via the app's FileProvider
+        -- required for handing a file to another app's Intent on Android 7+,
+        which blocks sharing raw file:// paths between apps. See p4a_hooks.py
+        and android_res/file_paths.xml for the provider/path-whitelist setup
+        this depends on."""
+        from jnius import autoclass
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        FileProviderClass = autoclass("androidx.core.content.FileProvider")
+        File = autoclass("java.io.File")
+        activity = PythonActivity.mActivity
+        return activity, FileProviderClass.getUriForFile(activity, FILEPROVIDER_AUTHORITY, File(path))
+
+    def _share_file(self, path: str, mime_type: str) -> None:
+        """Opens Android's native share sheet (WhatsApp, Viber, Telegram,
+        Messenger, Drive, Bluetooth, email -- whatever's installed and
+        registered to receive this file type)."""
+        try:
+            from jnius import autoclass, cast
+            Intent = autoclass("android.content.Intent")
+            activity, uri = self._content_uri_for(path)
+
+            intent = Intent(Intent.ACTION_SEND)
+            intent.setType(mime_type)
+            intent.putExtra(Intent.EXTRA_STREAM, cast("android.os.Parcelable", uri))
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(Intent.createChooser(intent, "Share Report"))
+        except Exception as exc:
+            self._show_message("Share Failed", f"Could not open the share sheet:\n{exc}")
+
+    def _email_to_client(self, path: str, mime_type: str, client_email: str) -> None:
+        """Opens the phone's email app with the client's address (from the
+        Client Info screen) and the report already attached -- the installer
+        reviews and taps Send themselves; nothing is sent automatically and no
+        email credentials are stored by this app."""
+        if not client_email:
+            self._show_message(
+                "No Client Email",
+                "Add the client's email on the Client Info screen first, then export again.",
+            )
+            return
+        try:
+            from jnius import autoclass, cast
+            Intent = autoclass("android.content.Intent")
+            activity, uri = self._content_uri_for(path)
+
+            intent = Intent(Intent.ACTION_SEND)
+            intent.setType("message/rfc822")
+            intent.putExtra(Intent.EXTRA_EMAIL, [client_email])
+            intent.putExtra(Intent.EXTRA_SUBJECT, "Your Solar System Proposal")
+            intent.putExtra(Intent.EXTRA_STREAM, cast("android.os.Parcelable", uri))
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(Intent.createChooser(intent, "Send via Email"))
+        except Exception as exc:
+            self._show_message("Email Failed", f"Could not open an email app:\n{exc}")
 
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
