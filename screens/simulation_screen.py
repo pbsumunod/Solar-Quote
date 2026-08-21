@@ -52,7 +52,10 @@ class SimulationScreen(MDScreen):
         self.hourly_consumption_kwh = [0.0] * 24
         self.pv_capacity_kw = 0.0
         self.peak_sun_hours = 4.5
-        self.system_efficiency_pct = 80.0
+        # Fixed at 100% -- see on_pre_enter. The Solar screen's user-editable
+        # efficiency still applies to sizing (how big a system to recommend);
+        # simulated/projected production always assumes full nameplate output.
+        self.system_efficiency_pct = 100.0
         self.battery_total_kwh = 0.0
         self.battery_dod_pct = 80.0
         self.battery_efficiency_pct = 90.0
@@ -192,7 +195,12 @@ class SimulationScreen(MDScreen):
         )
         self.pv_capacity_kw = state.solar_total_kw
         self.peak_sun_hours = state.peak_sun_hours
-        self.system_efficiency_pct = state.efficiency_pct
+        # Deliberately NOT state.efficiency_pct: the user's chosen efficiency still
+        # drives sizing (Solar screen's required kW / recommended array size), but
+        # simulated production, weather scenarios, and ROI all assume 100% -- the
+        # system is sized conservatively (with the loss derate) but shown producing
+        # at full nameplate output.
+        self.system_efficiency_pct = 100.0
         self.battery_total_kwh = state.battery_total_kwh
         self.battery_dod_pct = state.battery_dod_pct
         self.battery_efficiency_pct = state.battery_efficiency_pct
