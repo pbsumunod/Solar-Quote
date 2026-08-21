@@ -18,7 +18,6 @@ presplash.filename = %(source.dir)s/assets/splash/logo_splash.png
 android.presplash_color = #FDFCF8
 
 p4a.local_recipes = ./recipes
-p4a.hook = ./p4a_hooks.py
 
 android.api = 34
 android.minapi = 24
@@ -26,8 +25,6 @@ android.ndk = 25b
 android.archs = arm64-v8a
 android.build_tools = 34.0.0
 android.enable_androidx = True
-android.gradle_dependencies = androidx.core:core:1.12.0
-android.res_xml = android_res/file_paths.xml
 
 [buildozer]
 log_level = 2

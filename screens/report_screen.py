@@ -36,7 +36,7 @@ from widgets.line_chart import LineChart
 
 # Bumped by hand on each delivered build -- shown at the bottom of this screen so
 # a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-08-21-d"
+BUILD_LABEL = "2026-08-21-e-diag"
 
 MIME_TYPES = {
     "pdf": "application/pdf",
