@@ -26,7 +26,7 @@ from kivymd.uix.selectioncontrol import MDCheckbox
 from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import HOUR_LABELS, hourly_kwh_from_percentages
-from logic.chart_series import SERIES_COLORS, series_for_result
+from logic.chart_series import DOD_FLOOR_COLOR, SERIES_COLORS, series_for_result
 from logic.geo_data import latitude_for_country, solar_latitude_factor
 from logic.simulation import (
     DEFAULT_WEATHER_FACTORS,
@@ -287,7 +287,9 @@ class SimulationScreen(MDScreen):
         self.battery_label.text = f"{end_battery_kwh:.2f} kWh"
 
         series, x_labels, hours = self._series_for_result(result)
-        self.chart.set_data(series, x_labels)
+        dod_floor_kwh = self.battery_total_kwh * (1 - self.battery_dod_pct / 100)
+        hline = {"y": dod_floor_kwh, "label": "DOD Floor", "color": DOD_FLOOR_COLOR}
+        self.chart.set_data(series, x_labels, hline=hline)
         self._last_hours = hours
         self._refresh_table()
 

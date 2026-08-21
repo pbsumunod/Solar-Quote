@@ -24,7 +24,7 @@ from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
-from logic.chart_series import series_for_result
+from logic.chart_series import DOD_FLOOR_COLOR, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import ACCENT, TEXT_DARK, m3_field, screen_header, section_card, section_label, tonal_button, with_bg
 from widgets.line_chart import LineChart
@@ -177,6 +177,9 @@ class ReportScreen(MDScreen):
         inside python-pptx's own file open)."""
         app = MDApp.get_running_app()
         battery_total_kwh = data["battery"]["total_kwh"]
+        battery_dod_pct = data["battery"]["dod_pct"]
+        dod_floor_kwh = battery_total_kwh * (1 - battery_dod_pct / 100)
+        hline = {"y": dod_floor_kwh, "label": "DOD Floor", "color": DOD_FLOOR_COLOR}
         scenario_results = data["simulation"]["scenario_results"]
         tmp_dir = os.path.join(app.user_data_dir, "chart_tmp")
         os.makedirs(tmp_dir, exist_ok=True)
@@ -191,7 +194,7 @@ class ReportScreen(MDScreen):
                 continue
             series, x_labels, _hours = series_for_result(result, battery_total_kwh)
             chart = LineChart(size_hint=(None, None), size=(1600, 700))
-            chart.set_data(series, x_labels)
+            chart.set_data(series, x_labels, hline=hline)
             image_path = os.path.join(tmp_dir, f"chart_{name.lower()}.png")
 
             saved = False

@@ -13,6 +13,11 @@ SERIES_COLORS = {
     "Battery": (0.15, 0.55, 0.25, 1),
 }
 
+# Deliberately darker/more saturated than SERIES_COLORS["Battery"] -- the DOD floor
+# marker line needs to read as a distinct, emphasized reference even where the
+# Battery curve itself dips down to meet it (same hue would visually merge).
+DOD_FLOOR_COLOR = (0.02, 0.28, 0.08, 1)
+
 
 def series_for_result(result, battery_total_kwh: float) -> tuple[list[tuple], list[str], list]:
     hours = list(result.hours)

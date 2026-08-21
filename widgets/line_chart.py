@@ -1,8 +1,10 @@
 """Hand-drawn line chart -- no matplotlib, which doesn't package reliably for
 Android. Supports several colored series (optionally dashed, with point markers),
-an optional zero-crossing area fill (green above/red below) for one series, and
-an optional dashed vertical marker line with a label (e.g. a payback-year mark).
-Redraws whenever the widget is resized or set_data() is called again.
+an optional zero-crossing area fill (green above/red below) for one series, an
+optional dashed vertical marker line with a label (e.g. a payback-year mark), and
+an optional dashed horizontal marker line with a label (e.g. a battery's Depth of
+Discharge floor). Y-axis reference values are shown on both the left and right
+edges. Redraws whenever the widget is resized or set_data() is called again.
 """
 
 from kivy.graphics import Color, Ellipse, Line
@@ -19,9 +21,24 @@ TICK_EVERY = 3
 MARKER_RADIUS = dp(2.6)
 
 
+def _y_reference_values(y_min: float, y_max: float) -> tuple[float, float]:
+    """At least 2 distinct reference values for the y-axis, preferring whole
+    numbers. If y_min/y_max round to the same whole number (the series barely
+    moves), whole numbers can't tell them apart -- fall back to two points
+    evenly dividing the actual range instead, so the axis still shows something
+    meaningful rather than the same number twice."""
+    r_min, r_max = round(y_min), round(y_max)
+    if r_max != r_min:
+        return float(r_min), float(r_max)
+    if y_max == y_min:
+        return y_min, y_max
+    third = (y_max - y_min) / 3
+    return y_min + third, y_min + 2 * third
+
+
 class LineChart(Widget):
     LEFT_MARGIN = dp(36)
-    RIGHT_MARGIN = dp(10)
+    RIGHT_MARGIN = dp(34)
     TOP_MARGIN = dp(6)
     BOTTOM_MARGIN = dp(24)
 
@@ -30,18 +47,23 @@ class LineChart(Widget):
         self._series: list[tuple] = []  # (values, color, dashed)
         self._x_labels: list[str] = []
         self._vline: dict | None = None
+        self._hline: dict | None = None
         self._fill_index: int | None = None
         self._tick_labels: list[Label] = []
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_data(self, series: list[tuple], x_labels: list[str],
-                 vline: dict | None = None, fill_index: int | None = None) -> None:
+                 vline: dict | None = None, fill_index: int | None = None,
+                 hline: dict | None = None) -> None:
         """series: list of (values, color) or (values, color, dashed_bool).
-        vline: {"x": float_index, "label": str, "color": (r,g,b,a)} for a dashed marker line.
+        vline: {"x": float_index, "label": str, "color": (r,g,b,a)} for a dashed vertical marker line.
+        hline: {"y": float, "label": str, "color": (r,g,b,a)} for a dashed horizontal marker line
+               (e.g. a battery's Depth of Discharge floor).
         fill_index: index into series to area-fill against y=0 (green above, red below)."""
         self._series = [s if len(s) == 3 else (s[0], s[1], False) for s in series]
         self._x_labels = x_labels
         self._vline = vline
+        self._hline = hline
         self._fill_index = fill_index
         self._redraw()
 
@@ -65,6 +87,8 @@ class LineChart(Widget):
         n = len(self._x_labels)
 
         all_vals = [v for values, _c, _d in self._series for v in values] or [0.0]
+        if self._hline is not None:
+            all_vals = all_vals + [self._hline["y"]]
         y_min = min(0.0, min(all_vals))
         y_max = max(all_vals) if max(all_vals) > 0 else 1.0
         span = (y_max - y_min) or 1.0
@@ -128,8 +152,17 @@ class LineChart(Widget):
                 Color(*self._vline.get("color", (0.4, 0.25, 0.6, 1)))
                 Line(points=[vx, y0, vx, y1], width=1.4, dash_length=6, dash_offset=4)
 
-        self._add_y_label(f"{y_max:.1f}", x0, y1, top=True)
-        self._add_y_label(f"{y_min:.1f}", x0, y0, top=False)
+            if self._hline is not None:
+                hy = px(0, self._hline["y"])[1]
+                Color(*self._hline.get("color", (0.4, 0.25, 0.6, 1)))
+                Line(points=[x0, hy, x1, hy], width=2.4, dash_length=10, dash_offset=6)
+
+        ref_lo, ref_hi = _y_reference_values(y_min + pad, y_max - pad)
+        for side in ("left", "right"):
+            self._add_y_label(f"{ref_hi:.0f}" if ref_hi == round(ref_hi) else f"{ref_hi:.1f}",
+                               x0 if side == "left" else x1, y1, top=True, side=side)
+            self._add_y_label(f"{ref_lo:.0f}" if ref_lo == round(ref_lo) else f"{ref_lo:.1f}",
+                               x0 if side == "left" else x1, y0, top=False, side=side)
 
         if self._vline is not None:
             vx = px(self._vline["x"], 0)[0]
@@ -138,6 +171,17 @@ class LineChart(Widget):
                 color=self._vline.get("color", (0.4, 0.25, 0.6, 1)),
                 size_hint=(None, None), size=(dp(70), dp(14)),
                 pos=(vx - dp(5), y1 - dp(2)),
+            )
+            self.add_widget(lbl)
+            self._tick_labels.append(lbl)
+
+        if self._hline is not None:
+            hy = px(0, self._hline["y"])[1]
+            lbl = Label(
+                text=self._hline.get("label", ""), font_size="9sp", bold=True,
+                color=self._hline.get("color", (0.4, 0.25, 0.6, 1)),
+                size_hint=(None, None), size=(dp(90), dp(14)), halign="left",
+                pos=(x0 + dp(4), hy + dp(3)),
             )
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
@@ -154,11 +198,13 @@ class LineChart(Widget):
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
 
-    def _add_y_label(self, text: str, x: float, y: float, top: bool) -> None:
+    def _add_y_label(self, text: str, x: float, y: float, top: bool, side: str = "left") -> None:
         lbl = Label(
             text=text, font_size="9sp", color=(0.3, 0.3, 0.3, 1),
-            size_hint=(None, None), size=(dp(32), dp(14)), halign="right",
+            size_hint=(None, None), size=(dp(32), dp(14)),
+            halign="right" if side == "left" else "left",
         )
-        lbl.pos = (x - dp(34), y + (-dp(4) if top else -dp(10)))
+        x_offset = -dp(34) if side == "left" else dp(2)
+        lbl.pos = (x + x_offset, y + (-dp(4) if top else -dp(10)))
         self.add_widget(lbl)
         self._tick_labels.append(lbl)
