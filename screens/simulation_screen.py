@@ -19,7 +19,6 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.label import MDLabel
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
@@ -35,7 +34,10 @@ from logic.simulation import (
     hourly_solar_kwh,
     run_steady_state_simulation,
 )
-from ui_style import ACCENT, HEADER_BG, TEXT_DARK, WHITE, framed_label, top_app_bar, with_bg
+from ui_style import (
+    HEADER_BG, TEXT_DARK, WHITE, framed_label, picker_field, primary_button,
+    screen_header, section_label, stat_title_label, tonal_button, with_bg,
+)
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
 from widgets.weather_bg import WeatherBackground, rect_tint
@@ -70,14 +72,18 @@ class SimulationScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("Simulation", on_back=self._go_back))
+        root.add_widget(screen_header("Simulation", step=6, on_back=self._go_back))
 
         self.big_bg = WeatherBackground(self.active_scenario)
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        form = MDBoxLayout(orientation="vertical", spacing=dp(14), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        form.add_widget(self._section_label("Weather Scenarios & Grid Export"))
+        # This screen re-themes to the active weather scenario (see WeatherBackground /
+        # rect_tint), so its fields/stats keep their own translucent tinted style rather
+        # than the flat M3 section_card used elsewhere -- a tonal card here would fight
+        # that theming instead of matching it.
+        form.add_widget(section_label("weather-partly-cloudy", "Weather Scenarios & Grid Export"))
         weather_row = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(48))
         for name in SCENARIOS:
             field = self._tinted_field(hint_text=f"{name} %", input_filter="float",
@@ -87,11 +93,8 @@ class SimulationScreen(MDScreen):
             weather_row.add_widget(field)
         form.add_widget(weather_row)
 
-        self.scenario_btn = MDRaisedButton(
-            text="Active Scenario: Sunny", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-        )
-        self.scenario_btn.bind(on_release=self._open_scenario_menu)
-        form.add_widget(self.scenario_btn)
+        self.scenario_field = picker_field("weather-sunny", "Active Scenario", "Sunny", self._open_scenario_menu)
+        form.add_widget(self.scenario_field)
 
         export_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.export_checkbox = MDCheckbox(active=True, size_hint=(None, None), size=(dp(32), dp(32)))
@@ -102,44 +105,31 @@ class SimulationScreen(MDScreen):
         ))
         form.add_widget(export_row)
 
-        form.add_widget(self._section_label("Simulation (6 AM - 6 AM)"))
+        form.add_widget(section_label("chart-line", "Simulation (6 AM - 6 AM)"))
         form.add_widget(self._build_legend())
 
         self.chart = LineChart(size_hint_y=None, height=dp(280))
         form.add_widget(self.chart)
 
-        form.add_widget(self._section_label("Summary"))
+        form.add_widget(section_label("gauge", "Summary"))
         summary = MDBoxLayout(spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None, height=dp(56))
-        self.harvest_label = self._make_stat(summary, "Total Harvest")
-        self.consumption_label = self._make_stat(summary, "Consumption")
-        self.grid_label = self._make_stat(summary, "Grid Buy/Sell")
-        self.battery_label = self._make_stat(summary, "Battery (End)")
+        self.harvest_label = self._make_stat(summary, "Harvest")
+        self.consumption_label = self._make_stat(summary, "Load")
+        self.grid_label = self._make_stat(summary, "Grid")
+        self.battery_label = self._make_stat(summary, "Battery")
         form.add_widget(summary)
 
-        self.table_toggle_btn = MDRaisedButton(
-            text="Show Hourly Data Table", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._toggle_table(),
-        )
+        self.table_toggle_btn = tonal_button("Show Hourly Data Table", on_release=self._toggle_table)
         form.add_widget(self.table_toggle_btn)
         self.table_container = MDBoxLayout(orientation="vertical", size_hint_y=None, height=0)
         form.add_widget(self.table_container)
 
-        next_btn = MDRaisedButton(
-            text="Next: Savings & ROI", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._go_next(),
-        )
-        form.add_widget(next_btn)
+        form.add_widget(primary_button("Next: Savings & ROI", on_release=self._go_next))
 
         scroll.add_widget(form)
         self.big_bg.add_widget(scroll)
         root.add_widget(self.big_bg)
         self.add_widget(root)
-
-    def _section_label(self, text: str) -> MDLabel:
-        return MDLabel(
-            text=text, bold=True, size_hint_y=None, height=dp(24),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        )
 
     def _tinted_field(self, **kwargs) -> MDTextField:
         kwargs.setdefault("mode", "fill")
@@ -151,7 +141,7 @@ class SimulationScreen(MDScreen):
 
     def _make_stat(self, row: MDBoxLayout, title: str) -> MDLabel:
         box = MDBoxLayout(orientation="vertical")
-        box.add_widget(MDLabel(text=title, halign="center", theme_text_color="Custom", text_color=TEXT_DARK))
+        box.add_widget(stat_title_label(title))
         value_label = with_bg(
             MDLabel(text="--", bold=True, halign="center", theme_text_color="Custom", text_color=TEXT_DARK),
             bg=rect_tint(self.active_scenario),
@@ -173,14 +163,14 @@ class SimulationScreen(MDScreen):
             grid.add_widget(entry)
         return grid
 
-    def _open_scenario_menu(self, *_args) -> None:
+    def _open_scenario_menu(self) -> None:
         items = [{"text": s, "on_release": lambda s=s: self._select_scenario(s)} for s in SCENARIOS]
-        self._scenario_menu = MDDropdownMenu(caller=self.scenario_btn, items=items, width_mult=3)
+        self._scenario_menu = MDDropdownMenu(caller=self.scenario_field, items=items, width_mult=3)
         self._scenario_menu.open()
 
     def _select_scenario(self, scenario: str) -> None:
         self.active_scenario = scenario
-        self.scenario_btn.text = f"Active Scenario: {scenario}"
+        self.scenario_field.set_value(scenario)
         if self._scenario_menu:
             self._scenario_menu.dismiss()
         self._retheme()

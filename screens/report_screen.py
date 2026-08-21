@@ -19,14 +19,14 @@ from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
 from logic.chart_series import series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
-from ui_style import ACCENT, TEXT_DARK, WHITE, green_field, top_app_bar, with_bg
+from ui_style import ACCENT, TEXT_DARK, m3_field, screen_header, section_card, section_label, tonal_button, with_bg
 from widgets.line_chart import LineChart
 
 
@@ -56,22 +56,19 @@ class ReportScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("Report", on_back=self._go_back))
+        root.add_widget(screen_header("Report", step=8, on_back=self._go_back))
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        form.add_widget(self._section_label("Report Branding"))
-        self.company_name_field = green_field(hint_text="Company Name (optional)")
-        form.add_widget(self.company_name_field)
+        branding_card = section_card("briefcase-outline", "Report Branding")
+        self.company_name_field = m3_field("Company Name (optional)", icon="office-building-outline")
+        branding_card.add_widget(self.company_name_field)
+        form.add_widget(branding_card)
 
-        form.add_widget(self._section_label("Report Preview"))
-        refresh_btn = MDRaisedButton(
-            text="Refresh Preview", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._refresh_preview(),
-        )
-        form.add_widget(refresh_btn)
+        preview_card = section_card("file-document-edit-outline", "Report Preview")
+        preview_card.add_widget(tonal_button("Refresh Preview", on_release=self._refresh_preview))
         self.preview_label = with_bg(MDLabel(
             text="Tap Refresh Preview to see a summary.", theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None,
@@ -79,28 +76,30 @@ class ReportScreen(MDScreen):
         self.preview_label.bind(texture_size=lambda _i, val: setattr(self.preview_label, "height",
                                                                        max(dp(80), val[1] + dp(16))))
         self.preview_label.bind(width=lambda _i, val: setattr(self.preview_label, "text_size", (val - dp(16), None)))
-        form.add_widget(self.preview_label)
+        preview_card.add_widget(self.preview_label)
+        form.add_widget(preview_card)
 
-        form.add_widget(self._section_label("Export"))
-        export_row1 = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(48))
-        pdf_btn = MDRaisedButton(text="EXPORT PDF", md_bg_color=ACCENT, text_color=WHITE,
-                                  on_release=lambda *_: self._export("pdf"))
-        excel_btn = MDRaisedButton(text="EXPORT EXCEL", md_bg_color=ACCENT, text_color=WHITE,
-                                    on_release=lambda *_: self._export("excel"))
-        export_row1.add_widget(pdf_btn)
-        export_row1.add_widget(excel_btn)
-        form.add_widget(export_row1)
+        export_card = section_card("printer-outline", "Export")
+        export_row1 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
+        export_row1.add_widget(tonal_button(
+            "EXPORT PDF", on_release=lambda: self._export("pdf"),
+        ))
+        export_row1.add_widget(tonal_button(
+            "EXPORT EXCEL", on_release=lambda: self._export("excel"),
+        ))
+        export_card.add_widget(export_row1)
 
-        export_row2 = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(48))
-        csv_btn = MDRaisedButton(text="EXPORT CSV", md_bg_color=ACCENT, text_color=WHITE,
-                                  on_release=lambda *_: self._export("csv"))
-        pptx_btn = MDRaisedButton(text="EXPORT POWERPOINT", md_bg_color=ACCENT, text_color=WHITE,
-                                   on_release=lambda *_: self._export("pptx"))
-        export_row2.add_widget(csv_btn)
-        export_row2.add_widget(pptx_btn)
-        form.add_widget(export_row2)
+        export_row2 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
+        export_row2.add_widget(tonal_button(
+            "EXPORT CSV", on_release=lambda: self._export("csv"),
+        ))
+        export_row2.add_widget(tonal_button(
+            "EXPORT POWERPOINT", on_release=lambda: self._export("pptx"),
+        ))
+        export_card.add_widget(export_row2)
+        form.add_widget(export_card)
 
-        form.add_widget(self._section_label("Disclaimer"))
+        form.add_widget(section_label("information-outline", "Disclaimer"))
         form.add_widget(MDLabel(
             text=DISCLAIMER, theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(90),
@@ -109,12 +108,6 @@ class ReportScreen(MDScreen):
         scroll.add_widget(form)
         root.add_widget(scroll)
         self.add_widget(root)
-
-    def _section_label(self, text: str) -> MDLabel:
-        return MDLabel(
-            text=text, bold=True, size_hint_y=None, height=dp(24),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        )
 
     def _collect_data(self) -> dict:
         app = MDApp.get_running_app()

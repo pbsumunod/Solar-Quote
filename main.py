@@ -6,6 +6,7 @@ from db import database
 from screens.battery_screen import BatteryScreen
 from screens.client_screen import ClientScreen
 from screens.consumption_screen import ConsumptionScreen
+from screens.onboarding_screen import OnboardingScreen
 from screens.report_screen import ReportScreen
 from screens.roi_screen import RoiScreen
 from screens.simulation_screen import SimulationScreen
@@ -22,6 +23,7 @@ class SolarClientFinderApp(MDApp):
         self.theme_cls.primary_palette = "Green"
 
         sm = MDScreenManager()
+        sm.add_widget(OnboardingScreen())
         sm.add_widget(ClientScreen())
         sm.add_widget(ConsumptionScreen())
         sm.add_widget(SolarScreen())
@@ -30,7 +32,7 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(SimulationScreen())
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
-        sm.current = "client"
+        sm.current = "onboarding"
         return sm
 
 

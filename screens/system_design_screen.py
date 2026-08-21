@@ -15,14 +15,17 @@ from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import INVERTER_KW_TIERS, required_inverter_kw, round_up_to_standard_size
-from ui_style import ACCENT, TEXT_DARK, WHITE, green_field, top_app_bar, warning_row, with_bg
+from ui_style import (
+    ACCENT, TEXT_DARK, m3_field, primary_button, screen_header, section_card, section_label,
+    tonal_button, warning_row, with_bg,
+)
 
 DEFAULT_MAX_PV_INPUT = 8.0
 DEFAULT_MAX_PV_CHARGING = 6.0
@@ -45,48 +48,50 @@ class SystemDesignScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("System Design", on_back=self._go_back))
+        root.add_widget(screen_header("System Design", step=5, on_back=self._go_back))
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        form.add_widget(self._section_label("Recommended Inverter"))
+        result_card = section_card("flash-outline", "Recommended Inverter")
         result_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.recommended_label = with_bg(MDLabel(
             text="-- kW", bold=True, theme_text_color="Custom", text_color=ACCENT,
         ))
         result_row.add_widget(self.recommended_label)
-        show_calc_btn = MDRaisedButton(
-            text="SHOW CALCULATION", md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._show_calculation(),
-        )
-        result_row.add_widget(show_calc_btn)
-        form.add_widget(result_row)
+        result_row.add_widget(tonal_button(
+            "SHOW CALCULATION", on_release=self._show_calculation, size_hint_x=None, width=dp(170),
+        ))
+        result_card.add_widget(result_row)
+        form.add_widget(result_card)
 
-        form.add_widget(self._section_label("Inverter Assumptions"))
-        row1 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.max_pv_input_field = self._green_field("Max PV Input (kW)", f"{DEFAULT_MAX_PV_INPUT:.2f}")
-        self.max_pv_charging_field = self._green_field("Max PV Charging (kW)", f"{DEFAULT_MAX_PV_CHARGING:.2f}")
+        assumptions_card = section_card("tune-variant", "Inverter Assumptions")
+        row1 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.max_pv_input_field = self._field("Max PV Input (kW)", f"{DEFAULT_MAX_PV_INPUT:.2f}", "solar-power")
+        self.max_pv_charging_field = self._field(
+            "Max PV Charging (kW)", f"{DEFAULT_MAX_PV_CHARGING:.2f}", "battery-sync-outline",
+        )
         row1.add_widget(self.max_pv_input_field)
         row1.add_widget(self.max_pv_charging_field)
-        form.add_widget(row1)
+        assumptions_card.add_widget(row1)
 
-        row2 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.max_battery_charge_field = self._green_field(
-            "Max Battery Charge (kW)", f"{DEFAULT_MAX_BATTERY_CHARGE:.2f}",
+        row2 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.max_battery_charge_field = self._field(
+            "Max Battery Charge (kW)", f"{DEFAULT_MAX_BATTERY_CHARGE:.2f}", "battery-charging",
         )
-        self.max_battery_discharge_field = self._green_field(
-            "Max Battery Discharge (kW)", f"{DEFAULT_MAX_BATTERY_DISCHARGE:.2f}",
+        self.max_battery_discharge_field = self._field(
+            "Max Battery Discharge (kW)", f"{DEFAULT_MAX_BATTERY_DISCHARGE:.2f}", "battery-high",
         )
         row2.add_widget(self.max_battery_charge_field)
         row2.add_widget(self.max_battery_discharge_field)
-        form.add_widget(row2)
+        assumptions_card.add_widget(row2)
 
-        self.inverter_efficiency_field = self._green_field(
-            "Inverter Efficiency %", f"{DEFAULT_INVERTER_EFFICIENCY_PCT:.1f}",
+        self.inverter_efficiency_field = self._field(
+            "Inverter Efficiency %", f"{DEFAULT_INVERTER_EFFICIENCY_PCT:.1f}", "percent",
         )
-        form.add_widget(self.inverter_efficiency_field)
+        assumptions_card.add_widget(self.inverter_efficiency_field)
+        form.add_widget(assumptions_card)
 
         for f in (
             self.max_pv_input_field, self.max_pv_charging_field,
@@ -94,41 +99,32 @@ class SystemDesignScreen(MDScreen):
         ):
             f.bind(text=lambda *_a: self._on_selection_changed())
 
-        form.add_widget(self._section_label("Engineering Warnings"))
+        form.add_widget(section_label("alert-outline", "Engineering Warnings"))
         self.warnings_container = MDBoxLayout(orientation="vertical", spacing=dp(2), size_hint_y=None)
         self.warnings_container.bind(minimum_height=self.warnings_container.setter("height"))
         form.add_widget(self.warnings_container)
 
-        form.add_widget(self._section_label("Final Selected System"))
-        self.final_solar_label = self._summary_line(form, "Solar")
-        self.final_inverter_label = self._summary_line(form, "Inverter")
-        self.final_battery_label = self._summary_line(form, "Battery")
+        summary_card = section_card("clipboard-text-outline", "Final Selected System")
+        self.final_solar_label = self._summary_line(summary_card, "Solar")
+        self.final_inverter_label = self._summary_line(summary_card, "Inverter")
+        self.final_battery_label = self._summary_line(summary_card, "Battery")
+        form.add_widget(summary_card)
 
-        next_btn = MDRaisedButton(
-            text="Next: Simulation", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._go_next(),
-        )
-        form.add_widget(next_btn)
+        form.add_widget(primary_button("Next: Simulation", on_release=self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
         self.add_widget(root)
 
-    def _section_label(self, text: str) -> MDLabel:
-        return MDLabel(
-            text=text, bold=True, size_hint_y=None, height=dp(24),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        )
+    def _field(self, hint: str, text: str, icon: str) -> MDTextField:
+        return m3_field(hint, icon=icon, input_filter="float", text=text)
 
-    def _green_field(self, hint: str, text: str) -> MDTextField:
-        return green_field(hint_text=hint, input_filter="float", text=text)
-
-    def _summary_line(self, form: MDBoxLayout, title: str) -> MDLabel:
+    def _summary_line(self, container: MDBoxLayout, title: str) -> MDLabel:
         row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(28))
         row.add_widget(MDLabel(text=title, theme_text_color="Custom", text_color=TEXT_DARK, size_hint_x=0.3))
         value_label = with_bg(MDLabel(text="--", bold=True, theme_text_color="Custom", text_color=ACCENT))
         row.add_widget(value_label)
-        form.add_widget(row)
+        container.add_widget(row)
         return value_label
 
     def on_pre_enter(self, *_args) -> None:

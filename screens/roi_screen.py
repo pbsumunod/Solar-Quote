@@ -15,7 +15,7 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.menu import MDDropdownMenu
@@ -32,7 +32,10 @@ from logic.financial import (
     roi_percent,
     total_electricity_savings,
 )
-from ui_style import ACCENT, HEADER_BG, TEXT_DARK, WHITE, framed_label, green_field, top_app_bar, with_bg
+from ui_style import (
+    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, framed_label, m3_field, picker_field,
+    primary_button, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
+)
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
 
@@ -67,124 +70,107 @@ class RoiScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("Savings & ROI", on_back=self._go_back))
+        root.add_widget(screen_header("Savings & ROI", step=7, on_back=self._go_back))
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        form.add_widget(self._section_label("Savings & ROI Summary"))
-        summary1 = MDBoxLayout(spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None, height=dp(52))
+        summary_card = section_card("gauge", "Savings & ROI Summary")
+        summary1 = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(52))
         self.monthly_savings_label = self._make_stat(summary1, "Monthly Savings")
         self.annual_savings_label = self._make_stat(summary1, "Annual Savings")
         self.payback_label = self._make_stat(summary1, "Payback")
-        form.add_widget(summary1)
-        summary2 = MDBoxLayout(spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None, height=dp(52))
+        summary_card.add_widget(summary1)
+        summary2 = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(52))
         self.total_savings_label = self._make_stat(summary2, "N-Year Savings")
         self.net_benefit_label = self._make_stat(summary2, "Net Benefit")
         self.roi_pct_label = self._make_stat(summary2, "ROI %")
-        form.add_widget(summary2)
-        show_calc_btn = MDRaisedButton(
-            text="SHOW CALCULATION", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._show_calculation(),
-        )
-        form.add_widget(show_calc_btn)
+        summary_card.add_widget(summary2)
+        summary_card.add_widget(tonal_button("SHOW CALCULATION", on_release=self._show_calculation))
+        form.add_widget(summary_card)
 
-        form.add_widget(self._section_label("Financial Assumptions"))
-        row1 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.inflation_field = green_field(hint_text="Price Inflation %", input_filter="float",
-                                            text=f"{DEFAULT_INFLATION_PCT:.1f}")
-        self.export_rate_field = green_field(hint_text="Export Rate (PHP/kWh)", input_filter="float",
-                                              text=f"{DEFAULT_EXPORT_RATE:.2f}")
+        assumptions_card = section_card("cash-multiple", "Financial Assumptions")
+        row1 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.inflation_field = m3_field("Price Inflation %", icon="percent", input_filter="float",
+                                         text=f"{DEFAULT_INFLATION_PCT:.1f}")
+        self.export_rate_field = m3_field("Export Rate (PHP/kWh)", icon="transmission-tower-export",
+                                           input_filter="float", text=f"{DEFAULT_EXPORT_RATE:.2f}")
         for f in (self.inflation_field, self.export_rate_field):
             f.bind(text=lambda *_a: self._recalculate())
             row1.add_widget(f)
-        form.add_widget(row1)
+        assumptions_card.add_widget(row1)
 
-        self.maintenance_method_btn = MDRaisedButton(
-            text=f"Maintenance Method: {MAINTENANCE_METHODS[0]}", size_hint_x=1,
-            md_bg_color=ACCENT, text_color=WHITE,
+        self.maintenance_method_field = picker_field(
+            "cog-outline", "Maintenance Method", MAINTENANCE_METHODS[0], self._open_method_menu,
         )
-        self.maintenance_method_btn.bind(on_release=self._open_method_menu)
-        form.add_widget(self.maintenance_method_btn)
+        assumptions_card.add_widget(self.maintenance_method_field)
 
-        row2 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.maintenance_pct_field = green_field(hint_text="Maintenance %", input_filter="float",
-                                                  text=f"{DEFAULT_MAINTENANCE_PCT:.2f}")
-        self.maintenance_fixed_field = green_field(hint_text="Maintenance Fixed (PHP)", input_filter="float",
-                                                     text=f"{DEFAULT_MAINTENANCE_FIXED:.2f}")
+        row2 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.maintenance_pct_field = m3_field("Maintenance %", icon="percent", input_filter="float",
+                                               text=f"{DEFAULT_MAINTENANCE_PCT:.2f}")
+        self.maintenance_fixed_field = m3_field("Maintenance Fixed (PHP)", icon="cash", input_filter="float",
+                                                  text=f"{DEFAULT_MAINTENANCE_FIXED:.2f}")
         for f in (self.maintenance_pct_field, self.maintenance_fixed_field):
             f.bind(text=lambda *_a: self._recalculate())
             row2.add_widget(f)
-        form.add_widget(row2)
+        assumptions_card.add_widget(row2)
 
-        row3 = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.maintenance_inflation_field = green_field(hint_text="Maintenance Inflation %", input_filter="float",
-                                                         text="0.0")
-        self.years_field = green_field(hint_text="Simulation Years", input_filter="int",
-                                        text=str(DEFAULT_SIMULATION_YEARS))
+        row3 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.maintenance_inflation_field = m3_field("Maintenance Inflation %", icon="percent",
+                                                      input_filter="float", text="0.0")
+        self.years_field = m3_field("Simulation Years", icon="calendar-range", input_filter="int",
+                                     text=str(DEFAULT_SIMULATION_YEARS))
         for f in (self.maintenance_inflation_field, self.years_field):
             f.bind(text=lambda *_a: self._recalculate())
             row3.add_widget(f)
-        form.add_widget(row3)
+        assumptions_card.add_widget(row3)
 
-        self.system_cost_field = green_field(hint_text="Total Installed Solar System Cost (PHP)",
-                                              input_filter="float", text="0")
+        self.system_cost_field = m3_field("Total Installed Solar System Cost (PHP)", icon="wallet-outline",
+                                           input_filter="float", text="0")
         self.system_cost_field.bind(text=lambda *_a: self._recalculate())
-        form.add_widget(self.system_cost_field)
+        assumptions_card.add_widget(self.system_cost_field)
+        form.add_widget(assumptions_card)
 
-        form.add_widget(self._section_label("Annual Weather Mix"))
-        form.add_widget(MDLabel(
+        mix_card = section_card("weather-partly-cloudy", "Annual Weather Mix")
+        mix_card.add_widget(MDLabel(
             text="Share of the year in each weather scenario (from Simulation).",
             font_style="Caption", theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(20),
         ))
-        mix_row = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(48))
+        mix_row = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(52))
         for name in ("Sunny", "Cloudy", "Rainy"):
-            field = green_field(hint_text=f"{name} %", input_filter="float", text=f"{DEFAULT_WEATHER_MIX[name]:.1f}")
+            field = m3_field(f"{name} %", input_filter="float", text=f"{DEFAULT_WEATHER_MIX[name]:.1f}")
             field.bind(text=lambda *_a: self._recalculate())
             self._mix_fields[name] = field
             mix_row.add_widget(field)
-        form.add_widget(mix_row)
+        mix_card.add_widget(mix_row)
         self.mix_total_label = MDLabel(
             text="Total: 100.0% (must equal 100%)", size_hint_y=None, height=dp(20),
             theme_text_color="Custom", text_color=TEXT_DARK,
         )
-        form.add_widget(self.mix_total_label)
+        mix_card.add_widget(self.mix_total_label)
+        form.add_widget(mix_card)
 
-        form.add_widget(self._section_label("Cumulative Cash Flow vs Years"))
+        form.add_widget(section_label("chart-line", "Cumulative Cash Flow vs Years"))
         form.add_widget(self._build_legend())
         self.chart = LineChart(size_hint_y=None, height=dp(220))
         form.add_widget(self.chart)
 
-        self.table_toggle_btn = MDRaisedButton(
-            text="Show Financial Table", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._toggle_table(),
-        )
+        self.table_toggle_btn = tonal_button("Show Financial Table", on_release=self._toggle_table)
         form.add_widget(self.table_toggle_btn)
         self.table_container = MDBoxLayout(orientation="vertical", size_hint_y=None, height=0)
         form.add_widget(self.table_container)
 
-        next_btn = MDRaisedButton(
-            text="Next: Report", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._go_next(),
-        )
-        form.add_widget(next_btn)
+        form.add_widget(primary_button("Next: Report", on_release=self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
         self.add_widget(root)
 
-    def _section_label(self, text: str) -> MDLabel:
-        return MDLabel(
-            text=text, bold=True, size_hint_y=None, height=dp(24),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        )
-
     def _make_stat(self, row: MDBoxLayout, title: str) -> MDLabel:
         box = MDBoxLayout(orientation="vertical")
-        box.add_widget(MDLabel(text=title, font_style="Caption", halign="center",
-                                theme_text_color="Custom", text_color=TEXT_DARK))
+        box.add_widget(stat_title_label(title))
         value_label = with_bg(MDLabel(text="--", bold=True, halign="center",
                                        theme_text_color="Custom", text_color=ACCENT))
         box.add_widget(value_label)
@@ -204,14 +190,14 @@ class RoiScreen(MDScreen):
             row.add_widget(entry)
         return row
 
-    def _open_method_menu(self, *_args) -> None:
+    def _open_method_menu(self) -> None:
         items = [{"text": m, "on_release": lambda m=m: self._select_method(m)} for m in MAINTENANCE_METHODS]
-        self._method_menu = MDDropdownMenu(caller=self.maintenance_method_btn, items=items, width_mult=4)
+        self._method_menu = MDDropdownMenu(caller=self.maintenance_method_field, items=items, width_mult=4)
         self._method_menu.open()
 
     def _select_method(self, method_label: str) -> None:
         self.maintenance_method = "percentage" if method_label == MAINTENANCE_METHODS[0] else "fixed"
-        self.maintenance_method_btn.text = f"Maintenance Method: {method_label}"
+        self.maintenance_method_field.set_value(method_label)
         if self._method_menu:
             self._method_menu.dismiss()
         self._recalculate()
@@ -271,7 +257,7 @@ class RoiScreen(MDScreen):
         mix_ok = abs(total_mix - 100) < 0.05
         self.mix_total_label.text = f"Total: {total_mix:.1f}% (must equal 100%)"
         self.mix_total_label.theme_text_color = "Custom"
-        self.mix_total_label.text_color = (0.118, 0.490, 0.133, 1) if mix_ok else (0.776, 0.157, 0.157, 1)
+        self.mix_total_label.text_color = OK_GREEN if mix_ok else BAD_RED
 
         annual_purchase, annual_export = self._annual_figures()
         annual_without = annual_electricity_cost_without_solar(self.monthly_kwh, self.electricity_rate)

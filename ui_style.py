@@ -1,26 +1,57 @@
-"""Shared color constants and small helpers so buttons/tables read clearly on a white background."""
+"""Shared Material 3 color tokens and reusable components used across all screens.
 
+Palette is grounded in the app's original brand green (ACCENT/ACCENT_LIGHT below,
+unchanged from the pre-redesign values) plus a small set of neutral M3 surface/
+outline tokens layered on top, so the accent is used for emphasis rather than
+painted on every interactive element. See the "SolarQuote Client Screen" design
+mockup for the reference layout this module implements in Kivy.
+"""
+
+from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
-from kivy.graphics import Color, Line, Rectangle
+from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.image import Image
+from kivy.uix.widget import Widget
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDFillRoundFlatButton, MDFillRoundFlatIconButton, MDIconButton, MDRoundFlatButton
 from kivymd.uix.label import MDIcon, MDLabel
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.toolbar import MDTopAppBar
 
-ACCENT = (0.180, 0.494, 0.204, 1)    # Material Green 700, the app's brand color
-ACCENT_LIGHT = (0.788, 0.902, 0.788, 1)  # light green tint, for sub-column header cells and the Hour column
-TEXT_DARK = (0.08, 0.08, 0.08, 1)    # near-black, for table/body text
+# --- Brand tokens (unchanged from the pre-redesign palette) --------------------
+ACCENT = (0.180, 0.494, 0.204, 1)        # #2E7E34, Material Green 700-ish -- the brand color
+ACCENT_LIGHT = (0.788, 0.902, 0.788, 1)  # #C9E6C9, light green tint
+TEXT_DARK = (0.08, 0.08, 0.08, 1)
 WHITE = (1, 1, 1, 1)
-CELL_BG = (1, 1, 1, 1)               # data cell background
-HEADER_BG = ACCENT_LIGHT              # light green, for table sub-column header row
-NEAR_WHITE = (0.95, 0.98, 0.95, 1)    # ~10% green tint, for the %/kWh data columns
-LIGHT_GREEN_BG = ACCENT_LIGHT         # same shade as the Consumption table's Hour column, for result/editable fields app-wide
-ROW_LINE = (0.80, 0.82, 0.80, 1)      # thin bottom border drawn per cell -- row divider
+CELL_BG = (1, 1, 1, 1)
+HEADER_BG = ACCENT_LIGHT
+NEAR_WHITE = (0.95, 0.98, 0.95, 1)
+LIGHT_GREEN_BG = ACCENT_LIGHT
+ROW_LINE = (0.80, 0.82, 0.80, 1)
 OK_GREEN = (0.118, 0.490, 0.133, 1)
 BAD_RED = (0.776, 0.157, 0.157, 1)
 WARN_OK_BG = (0.85, 0.95, 0.85, 1)
 WARN_BAD_BG = (0.99, 0.87, 0.87, 1)
 
+# --- M3 neutral surface/outline tokens ------------------------------------------
+SURFACE = (0.992, 0.988, 0.973, 1)            # #FDFCF8, warm near-white page background
+SURFACE_CONTAINER = (0.953, 0.945, 0.918, 1)  # #F3F1EA, section card / tonal row background
+OUTLINE = (0.788, 0.777, 0.737, 1)            # #C9C6BC, field border
+OUTLINE_VARIANT = (0.886, 0.875, 0.827, 1)    # #E2DFD3, hairline divider
+ON_SURFACE = (0.110, 0.110, 0.094, 1)         # #1C1C18, primary text
+ON_SURFACE_VARIANT = (0.282, 0.278, 0.243, 1) # #48473E, secondary/caption text and icons
+ON_PRIMARY_CONTAINER = (0.078, 0.200, 0.094, 1)  # #143318, text/icon on ACCENT_LIGHT
+
+LOGO_PATH = "assets/images/logo.png"
+
+STEP_NAMES = [
+    "Client Info", "Consumption", "Solar Sizing", "Battery Sizing",
+    "System Design", "Simulation", "Savings & ROI", "Report",
+]
+
+
+# --- Table/warning helpers (unchanged) ------------------------------------------
 
 def framed_label(text: str, height, bold: bool = False, bg=CELL_BG, fg=TEXT_DARK) -> MDLabel:
     """An MDLabel with an explicit opaque background, dark text, and a thin bottom border,
@@ -48,16 +79,7 @@ def framed_label(text: str, height, bold: bool = False, bg=CELL_BG, fg=TEXT_DARK
     return lbl
 
 
-def green_field(**kwargs) -> MDTextField:
-    """An MDTextField with the app-wide light-green 'editable data' background
-    (same shade as the Consumption table's Hour column)."""
-    kwargs.setdefault("mode", "fill")
-    kwargs.setdefault("fill_color_normal", LIGHT_GREEN_BG)
-    kwargs.setdefault("fill_color_focus", WHITE)
-    return MDTextField(**kwargs)
-
-
-def with_bg(widget, bg=LIGHT_GREEN_BG):
+def with_bg(widget, bg=LIGHT_GREEN_BG) -> object:
     """Draws an opaque background rectangle behind any widget (e.g. a result MDLabel)
     without altering its other properties. The Color instruction is exposed as
     widget.bg_color so callers can re-tint it later (widget.bg_color.rgba = ...)."""
@@ -84,12 +106,14 @@ def warning_row(ok: bool, text: str) -> MDBoxLayout:
     icon = MDIcon(
         icon="check-circle" if ok else "close-circle",
         theme_text_color="Custom", text_color=icon_color,
-        size_hint=(None, None), size=(dp(24), dp(24)), pos_hint={"top": 1},
+        size_hint=(None, None), size=(dp(24), dp(24)),
     )
+    icon_cell = AnchorLayout(anchor_x="center", anchor_y="top", size_hint=(None, 1), width=dp(24))
+    icon_cell.add_widget(icon)
     label = MDLabel(text=text, theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None)
     label.bind(texture_size=lambda _i, val: setattr(label, "height", val[1]))
     label.bind(width=lambda _i, val: setattr(label, "text_size", (val, None)))
-    row.add_widget(icon)
+    row.add_widget(icon_cell)
     row.add_widget(label)
     row.bind(minimum_height=row.setter("height"))
 
@@ -110,11 +134,367 @@ def warning_row(ok: bool, text: str) -> MDBoxLayout:
     return row
 
 
-def top_app_bar(title: str, on_back=None) -> MDTopAppBar:
-    """Solid-green header bar with a white title, matching the reference app-bar style.
-    Pass on_back to show a back arrow (omitted on the root/first screen)."""
-    left_items = [["arrow-left", lambda *_a: on_back()]] if on_back else []
-    return MDTopAppBar(
-        title=title, left_action_items=left_items,
-        md_bg_color=ACCENT, specific_text_color=WHITE, elevation=2,
+def _icon_cell(icon: str, color=None, size=20, width=24) -> AnchorLayout:
+    """A small icon deterministically centered in a fixed-width, row-height-filling
+    cell -- for icons placed directly in a horizontal row (PickerField, project_row,
+    section_label), as opposed to _centered() which wraps a self-sizing button."""
+    cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(width))
+    cell.add_widget(MDIcon(
+        icon=icon, theme_text_color="Custom", text_color=color or ON_SURFACE_VARIANT,
+        size_hint=(None, None), size=(dp(size), dp(size)),
+    ))
+    return cell
+
+
+def _centered(widget, width) -> AnchorLayout:
+    """Wraps a widget that manages its own fixed size (MDIconButton, MDFillRoundFlat
+    IconButton, Image) in an AnchorLayout so it's reliably centered on the cross-axis
+    of a horizontal BoxLayout row. BoxLayout does NOT center children on the
+    perpendicular axis -- it bottom/left-anchors them -- so anything whose natural
+    height differs from the row's padded content height (e.g. MDIconButton always
+    sets its own ~48dp height regardless of size_hint_y) visibly drifts off-center
+    against Label siblings, which stretch to fill the row and self-center their text.
+
+    `width` seeds the cell so there's no zero-width flash; buttons that compute their
+    own final width a frame later (MDIconButton, MDFillRoundFlatIconButton) then keep
+    the cell in sync via this binding rather than clipping at the seeded estimate."""
+    cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=width)
+    widget.bind(width=lambda _i, val: setattr(cell, "width", max(val, width)))
+    cell.add_widget(widget)
+    return cell
+
+
+# --- M3 page header: top bar + step progress ------------------------------------
+
+def screen_header(title: str, step: int, on_back=None, show_logo: bool = False, right_widget=None) -> MDBoxLayout:
+    """Surface-toned top bar (back arrow or brand logo, screen title) plus an
+    8-step progress track showing where this screen sits in the wizard flow."""
+    root = MDBoxLayout(orientation="vertical", size_hint_y=None)
+    root.bind(minimum_height=root.setter("height"))
+
+    bar = MDBoxLayout(
+        orientation="horizontal", spacing=dp(12), padding=(dp(12), dp(10)),
+        size_hint_y=None, height=dp(56),
     )
+    with bar.canvas.before:
+        Color(*SURFACE)
+        bar_rect = Rectangle(pos=bar.pos, size=bar.size)
+        Color(*OUTLINE_VARIANT)
+        bar_border = Line(points=[], width=1)
+
+    def _sync_bar(instance, _value):
+        bar_rect.pos = instance.pos
+        bar_rect.size = instance.size
+        x, y = instance.pos
+        w, _h = instance.size
+        bar_border.points = [x, y, x + w, y]
+
+    bar.bind(pos=_sync_bar, size=_sync_bar)
+
+    if on_back:
+        back_btn = MDIconButton(
+            icon="arrow-left", theme_text_color="Custom", text_color=ON_SURFACE,
+            on_release=lambda *_a: on_back(),
+        )
+        bar.add_widget(_centered(back_btn, width=dp(40)))
+    elif show_logo:
+        bar.add_widget(_centered(
+            Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(34), dp(34))),
+            width=dp(40),
+        ))
+    else:
+        bar.add_widget(Widget(size_hint=(None, None), size=(dp(8), dp(8))))
+
+    title_label = MDLabel(
+        text=title, bold=True, font_style="H6",
+        theme_text_color="Custom", text_color=ON_SURFACE,
+    )
+    bar.add_widget(title_label)
+    if right_widget is not None:
+        bar.add_widget(_centered(right_widget, width=right_widget.width or dp(90)))
+    root.add_widget(bar)
+
+    progress = MDBoxLayout(
+        orientation="vertical", spacing=dp(6), padding=(dp(16), dp(8), dp(16), dp(10)),
+        size_hint_y=None, height=dp(34),
+    )
+    with progress.canvas.before:
+        Color(*SURFACE)
+        progress_rect = Rectangle(pos=progress.pos, size=progress.size)
+        Color(*OUTLINE_VARIANT)
+        progress_border = Line(points=[], width=1)
+
+    def _sync_progress(instance, _value):
+        progress_rect.pos = instance.pos
+        progress_rect.size = instance.size
+        x, y = instance.pos
+        w, _h = instance.size
+        progress_border.points = [x, y, x + w, y]
+
+    progress.bind(pos=_sync_progress, size=_sync_progress)
+
+    step_label = MDLabel(
+        text=f"Step {step} of {len(STEP_NAMES)} · {STEP_NAMES[step - 1]}",
+        font_style="Caption", size_hint_y=None, height=dp(14),
+        theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
+    )
+    progress.add_widget(step_label)
+
+    track = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(4))
+    for i in range(len(STEP_NAMES)):
+        seg = Widget(size_hint_x=1)
+        color = ACCENT if i < step else OUTLINE_VARIANT
+        with seg.canvas:
+            Color(*color)
+            seg_rect = Rectangle(pos=seg.pos, size=seg.size)
+
+        def _sync_seg(instance, _value, seg_rect=seg_rect):
+            seg_rect.pos = instance.pos
+            seg_rect.size = instance.size
+
+        seg.bind(pos=_sync_seg, size=_sync_seg)
+        track.add_widget(seg)
+    progress.add_widget(track)
+    root.add_widget(progress)
+
+    return root
+
+
+# --- M3 outlined text field -------------------------------------------------------
+
+def m3_field(hint_text: str, icon: str | None = None, **kwargs) -> MDTextField:
+    """An outlined, rounded Material 3-style text field with an optional leading icon."""
+    kwargs.setdefault("mode", "rectangle")
+    kwargs.setdefault("radius", [dp(14)] * 4)
+    kwargs.setdefault("line_color_normal", OUTLINE)
+    kwargs.setdefault("line_color_focus", ACCENT)
+    kwargs.setdefault("hint_text_color_normal", ON_SURFACE_VARIANT)
+    kwargs.setdefault("hint_text_color_focus", ACCENT)
+    kwargs.setdefault("text_color_normal", ON_SURFACE)
+    kwargs.setdefault("text_color_focus", ON_SURFACE)
+    if icon:
+        kwargs.setdefault("icon_left", icon)
+        kwargs.setdefault("icon_left_color_normal", ON_SURFACE_VARIANT)
+        kwargs.setdefault("icon_left_color_focus", ACCENT)
+    return MDTextField(hint_text=hint_text, **kwargs)
+
+
+# Back-compat alias for any leftover callers -- prefer m3_field() for new fields.
+def green_field(**kwargs) -> MDTextField:
+    hint_text = kwargs.pop("hint_text", "")
+    return m3_field(hint_text, **kwargs)
+
+
+class PickerField(ButtonBehavior, MDBoxLayout):
+    """An outlined row styled like m3_field but tappable, for actions that open a
+    dropdown menu or bottom sheet (country, ratio, scenario, maintenance method)
+    instead of taking direct text input."""
+
+    def __init__(self, icon: str, label: str, value: str = "", **kwargs):
+        kwargs.setdefault("orientation", "horizontal")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(52))
+        kwargs.setdefault("padding", (dp(12), 0))
+        kwargs.setdefault("spacing", dp(10))
+        super().__init__(**kwargs)
+
+        with self.canvas.before:
+            Color(*OUTLINE)
+            self._border = Line(rounded_rectangle=(0, 0, 0, 0, 14), width=1.2)
+        self.bind(pos=self._sync, size=self._sync)
+
+        self.add_widget(_icon_cell(icon))
+        col = BoxLayout(orientation="vertical")
+        self._label = MDLabel(
+            text=label, font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
+        )
+        self._value = MDLabel(text=value, theme_text_color="Custom", text_color=ON_SURFACE)
+        col.add_widget(self._label)
+        col.add_widget(self._value)
+        self.add_widget(col)
+        self.add_widget(_icon_cell("menu-down"))
+
+    def _sync(self, instance, _value) -> None:
+        self._border.rounded_rectangle = (instance.x, instance.y, instance.width, instance.height, 14)
+
+    def set_value(self, text: str) -> None:
+        self._value.text = text
+
+    # Kept so screens that used to read/write a plain-button `.text` keep working.
+    @property
+    def text(self) -> str:
+        return self._value.text
+
+    @text.setter
+    def text(self, value: str) -> None:
+        self._value.text = value
+
+
+def picker_field(icon: str, label: str, value: str, on_release) -> PickerField:
+    field = PickerField(icon, label, value)
+    field.bind(on_release=lambda *_a: on_release())
+    return field
+
+
+# --- M3 buttons --------------------------------------------------------------------
+
+def primary_button(text: str, on_release=None, **kwargs) -> MDFillRoundFlatButton:
+    """The main call-to-action for a screen (e.g. "Next: ..."). Filled, full brand color."""
+    kwargs.setdefault("size_hint_x", 1)
+    kwargs.setdefault("size_hint_y", None)
+    kwargs.setdefault("height", dp(48))
+    btn = MDFillRoundFlatButton(text=text, md_bg_color=ACCENT, text_color=WHITE, **kwargs)
+    if on_release:
+        btn.bind(on_release=lambda *_a: on_release())
+    return btn
+
+
+def tonal_button(text: str, on_release=None, **kwargs) -> MDFillRoundFlatButton:
+    """A secondary action worth noticing (SHOW CALCULATION, exports, toggles) --
+    tonal fill so it doesn't compete with the screen's primary_button."""
+    kwargs.setdefault("size_hint_x", 1)
+    kwargs.setdefault("size_hint_y", None)
+    kwargs.setdefault("height", dp(44))
+    btn = MDFillRoundFlatButton(text=text, md_bg_color=ACCENT_LIGHT, text_color=ON_PRIMARY_CONTAINER, **kwargs)
+    if on_release:
+        btn.bind(on_release=lambda *_a: on_release())
+    return btn
+
+
+def outlined_button(text: str, on_release=None, danger: bool = False, **kwargs) -> MDRoundFlatButton:
+    """A low-emphasis action (New, Duplicate, Delete) -- outline only, no fill."""
+    color = BAD_RED if danger else ACCENT
+    kwargs.setdefault("size_hint_y", None)
+    kwargs.setdefault("height", dp(40))
+    btn = MDRoundFlatButton(text=text, line_color=color, text_color=color, **kwargs)
+    if on_release:
+        btn.bind(on_release=lambda *_a: on_release())
+    return btn
+
+
+def save_button(on_release=None, text: str = "Save", **kwargs) -> MDFillRoundFlatIconButton:
+    """A compact tonal pill button for a screen's top-bar Save action."""
+    kwargs.setdefault("size_hint", (None, None))
+    kwargs.setdefault("height", dp(36))
+    btn = MDFillRoundFlatIconButton(
+        icon="content-save", text=text,
+        md_bg_color=ACCENT_LIGHT, text_color=ON_PRIMARY_CONTAINER, icon_color=ON_PRIMARY_CONTAINER,
+        **kwargs,
+    )
+    if on_release:
+        btn.bind(on_release=lambda *_a: on_release())
+    return btn
+
+
+def icon_button(icon: str, on_release=None, color=ON_SURFACE_VARIANT, **kwargs) -> MDIconButton:
+    btn = MDIconButton(icon=icon, theme_text_color="Custom", text_color=color, **kwargs)
+    if on_release:
+        btn.bind(on_release=lambda *_a: on_release())
+    return btn
+
+
+def section_card(icon: str, title: str) -> MDBoxLayout:
+    """A rounded, tonal-surface container with an icon-badge + title header. Add
+    field rows and other content to the returned card via card.add_widget(...)."""
+    card = MDBoxLayout(
+        orientation="vertical", spacing=dp(14), padding=dp(16),
+        size_hint_y=None,
+    )
+    card.bind(minimum_height=card.setter("height"))
+    with card.canvas.before:
+        Color(*SURFACE_CONTAINER)
+        card_rect = RoundedRectangle(pos=card.pos, size=card.size, radius=[dp(20)])
+
+    def _sync_card(instance, _value):
+        card_rect.pos = instance.pos
+        card_rect.size = instance.size
+
+    card.bind(pos=_sync_card, size=_sync_card)
+
+    header = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(30))
+    badge = AnchorLayout(
+        anchor_x="center", anchor_y="center", size_hint=(None, None), size=(dp(30), dp(30)),
+    )
+    with badge.canvas.before:
+        Color(*ACCENT_LIGHT)
+        badge_rect = RoundedRectangle(pos=badge.pos, size=badge.size, radius=[dp(10)])
+
+    def _sync_badge(instance, _value):
+        badge_rect.pos = instance.pos
+        badge_rect.size = instance.size
+
+    badge.bind(pos=_sync_badge, size=_sync_badge)
+    badge.add_widget(MDIcon(
+        icon=icon, theme_text_color="Custom", text_color=ON_PRIMARY_CONTAINER,
+        size_hint=(None, None), size=(dp(17), dp(17)),
+    ))
+    header.add_widget(badge)
+    header.add_widget(MDLabel(
+        text=title.upper(), bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
+    ))
+    card.add_widget(header)
+    return card
+
+
+def stat_title_label(text: str, fg=TEXT_DARK) -> MDLabel:
+    """A stat-tile caption ('Total Daily', 'Grid Buy/Sell', ...) that always stays
+    on one line -- a caption that wraps unpredictably in a narrow column breaks the
+    whole row's baseline against its siblings that didn't wrap (worse, Kivy can wrap
+    mid-word with no hyphen). Shortening to an ellipsis instead keeps every tile in
+    a row the same height regardless of how long its label is."""
+    lbl = MDLabel(
+        text=text, font_style="Caption", halign="center",
+        theme_text_color="Custom", text_color=fg,
+        shorten=True, shorten_from="right", max_lines=1,
+    )
+    lbl.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+    return lbl
+
+
+def section_label(icon: str, title: str) -> MDBoxLayout:
+    """A lightweight icon+title section header for content that shouldn't sit inside
+    a tonal section_card -- charts, big data tables, dynamic warning lists, and the
+    weather-tinted Simulation screen, where a flat SURFACE_CONTAINER card would either
+    clash with custom theming or fight a widget's own dynamic sizing."""
+    row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(24))
+    row.add_widget(_icon_cell(icon, color=ACCENT, size=18, width=20))
+    row.add_widget(MDLabel(
+        text=title.upper(), bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
+    ))
+    return row
+
+
+def project_row(subtitle: str, value: str, on_switch, on_new, on_more) -> MDBoxLayout:
+    """The de-emphasized project switcher row: current project name + New/overflow
+    actions, styled as a tonal pill so it doesn't compete with the form below it."""
+    row = MDBoxLayout(spacing=dp(10), padding=(dp(14), dp(8), dp(8), dp(8)), size_hint_y=None, height=dp(52))
+    with row.canvas.before:
+        Color(*SURFACE_CONTAINER)
+        row_rect = RoundedRectangle(pos=row.pos, size=row.size, radius=[dp(14)])
+
+    def _sync(instance, _value):
+        row_rect.pos = instance.pos
+        row_rect.size = instance.size
+
+    row.bind(pos=_sync, size=_sync)
+
+    row.add_widget(_icon_cell("file-document-outline", size=20, width=22))
+    col = BoxLayout(orientation="vertical")
+    col.add_widget(MDLabel(text=subtitle, font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT))
+    value_label = MDLabel(text=value, bold=True, theme_text_color="Custom", text_color=ON_SURFACE, shorten=True)
+    col.add_widget(value_label)
+    # Wrap the label column itself so tapping the project name/value opens the switcher.
+    wrapper = _Tappable(on_switch)
+    wrapper.add_widget(col)
+    row.add_widget(wrapper)
+
+    row.add_widget(_centered(icon_button("plus", on_new), width=dp(40)))
+    row.add_widget(_centered(icon_button("dots-vertical", on_more), width=dp(40)))
+    row._value_label = value_label
+    return row
+
+
+class _Tappable(ButtonBehavior, BoxLayout):
+    def __init__(self, on_release, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(on_release=lambda *_a: on_release())

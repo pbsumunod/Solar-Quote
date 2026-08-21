@@ -7,12 +7,14 @@ actual math (daily/day/night/peak, per-hour kWh) still comes from the ported
 logic/calculations.py, unchanged from the desktop version.
 """
 
+from kivy.graphics import Color, Rectangle
 from kivy.metrics import dp
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
+from kivy.uix.widget import Widget
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDRaisedButton
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
@@ -24,7 +26,11 @@ from logic.calculations import (
     hourly_kwh_from_percentages,
     split_day_night_kwh,
 )
-from ui_style import ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ROW_LINE, TEXT_DARK, WHITE, framed_label, top_app_bar
+from ui_style import (
+    ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
+    framed_label, primary_button, screen_header, section_card, section_label, stat_title_label, tonal_button,
+)
+from widgets.bar_chart import BarChart
 
 
 class ConsumptionScreen(MDScreen):
@@ -41,50 +47,57 @@ class ConsumptionScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("Consumption", on_back=self._go_back))
+        root.add_widget(screen_header("Consumption", step=2, on_back=self._go_back))
 
-        summary = MDBoxLayout(spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None, height=dp(56))
+        scroll = ScrollView()
+        form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
+        form.bind(minimum_height=form.setter("height"))
+
+        summary_card = section_card("chart-bell-curve-cumulative", "Daily Consumption Summary")
+        summary = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(56))
         self.total_label = self._make_stat(summary, "Total Daily")
         self.day_label = self._make_stat(summary, "Daytime")
         self.night_label = self._make_stat(summary, "Nighttime")
-        self.peak_label = self._make_stat(summary, "Peak Hourly")
-        root.add_widget(summary)
+        self.peak_label = self._make_stat(summary, "Peak")
+        summary_card.add_widget(summary)
+        form.add_widget(summary_card)
 
-        header_row = MDBoxLayout(spacing=dp(8), padding=(dp(8), 0), size_hint_y=None, height=dp(36))
+        form.add_widget(section_label("table", "Hourly Load Profile"))
+        header_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.total_pct_label = MDLabel(
             text="Total: 100.00% (must equal 100%)", theme_text_color="Custom", text_color=TEXT_DARK,
         )
         header_row.add_widget(self.total_pct_label)
-        reset_btn = MDRaisedButton(
-            text="RESET", md_bg_color=ACCENT, text_color=WHITE, on_release=lambda *_: self._reset_to_default(),
-        )
+        reset_btn = tonal_button("RESET", on_release=self._reset_to_default, size_hint_x=None, width=dp(90))
         header_row.add_widget(reset_btn)
-        root.add_widget(header_row)
+        form.add_widget(header_row)
 
         # Daytime (first 12 hours) and nighttime (last 12) sit side by side instead of one
         # 24-row column -- halves the scroll length and mirrors the day/night grouping
-        # used everywhere else in the app (colors, ratio split, etc).
-        scroll = ScrollView()
-        columns = MDBoxLayout(spacing=dp(8), padding=dp(4), size_hint_y=None)
+        # used everywhere else in the app (colors, ratio split, etc). No inner ScrollView:
+        # the table is just part of the page's own scroll content, so there's one scroll
+        # gesture and one scrollbar for the whole screen instead of a nested one.
+        columns = MDBoxLayout(spacing=dp(8), size_hint_y=None)
         columns.bind(minimum_height=columns.setter("height"))
         day_col = self._build_hour_column("Daytime (6AM-5PM)", range(0, 12))
         night_col = self._build_hour_column("Nighttime (6PM-5AM)", range(12, 24))
         columns.add_widget(day_col)
         columns.add_widget(night_col)
-        scroll.add_widget(columns)
+        form.add_widget(columns)
+
+        form.add_widget(section_label("chart-bar", "Hourly Load Chart"))
+        legend = MDBoxLayout(spacing=dp(16), size_hint_y=None, height=dp(20))
+        legend.add_widget(self._legend_entry("Daytime", ACCENT))
+        legend.add_widget(self._legend_entry("Nighttime", ON_SURFACE_VARIANT))
+        legend.add_widget(MDBoxLayout())
+        form.add_widget(legend)
+        self.chart = BarChart(size_hint_y=None, height=dp(180))
+        form.add_widget(self.chart)
+
+        form.add_widget(primary_button("Next: Solar Sizing", on_release=self._go_next))
+
+        scroll.add_widget(form)
         root.add_widget(scroll)
-
-        root.add_widget(MDLabel(
-            text="Chart view coming soon", halign="center", size_hint_y=None, height=dp(32),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        ))
-
-        next_btn = MDRaisedButton(
-            text="Next: Solar Sizing", size_hint_x=1, size_hint_y=None, height=dp(40),
-            md_bg_color=ACCENT, text_color=WHITE, on_release=lambda *_: self._go_next(),
-        )
-        root.add_widget(next_btn)
-
         self.add_widget(root)
 
     def _build_hour_column(self, title: str, indices: range) -> MDBoxLayout:
@@ -94,7 +107,12 @@ class ConsumptionScreen(MDScreen):
         # echoing the reference table's grouped header row (e.g. "Fixed" over "<1y/>1y").
         col.add_widget(framed_label(title, dp(26), bold=True, bg=ACCENT, fg=WHITE))
 
-        row_h = dp(36)
+        # 56dp: MDTextField's comfortable natural height (it reserves room for its
+        # hint-label/underline chrome) -- the row was previously squeezed to 36-40dp,
+        # which is what left the value looking cramped/off-center against its
+        # neighboring cells. Taller rows, but a field that renders correctly beats a
+        # compact one that doesn't.
+        row_h = dp(56)
         grid = GridLayout(cols=3, size_hint_y=None, spacing=dp(1), padding=dp(1),
                            row_default_height=row_h, row_force_default=True)
         grid.bind(minimum_height=grid.setter("height"))
@@ -106,13 +124,7 @@ class ConsumptionScreen(MDScreen):
             # Hour column: light green. %/kWh columns: near-white (~10% green tint) --
             # each cell owns an explicit opaque background, nothing relies on bleed-through.
             grid.add_widget(framed_label(HOUR_LABELS[i], row_h, bg=ACCENT_LIGHT))
-            pct_field = MDTextField(
-                text=f"{self.hourly_pct[i]:.2f}", input_filter="float",
-                font_size="13sp", size_hint_y=None, height=row_h,
-                mode="fill", fill_color_normal=NEAR_WHITE, fill_color_focus=WHITE,
-                foreground_color=TEXT_DARK, line_color_normal=ROW_LINE, line_color_focus=ACCENT,
-            )
-            pct_field.bind(text=lambda _inst, val, idx=i: self._on_pct_changed(idx, val))
+            pct_field = self._pct_cell(i, row_h)
             grid.add_widget(pct_field)
             self._pct_fields.append(pct_field)
             kwh_label = framed_label("0.00", row_h, bg=NEAR_WHITE)
@@ -121,9 +133,33 @@ class ConsumptionScreen(MDScreen):
         col.add_widget(grid)
         return col
 
+    def _pct_cell(self, index: int, height) -> MDTextField:
+        field = MDTextField(
+            text=f"{self.hourly_pct[index]:.2f}", input_filter="float",
+            font_size="13sp", size_hint_y=None, height=height, halign="center",
+            mode="fill", fill_color_normal=NEAR_WHITE, fill_color_focus=WHITE,
+            text_color_normal=TEXT_DARK, text_color_focus=TEXT_DARK,
+            line_color_normal=ROW_LINE, line_color_focus=ACCENT,
+        )
+        field.bind(text=lambda _inst, val, idx=index: self._on_pct_changed(idx, val))
+        return field
+
+    def _legend_entry(self, label: str, color: tuple) -> MDBoxLayout:
+        entry = MDBoxLayout(spacing=dp(6), size_hint=(None, None), size=(dp(90), dp(20)))
+        swatch = Widget(size_hint=(None, None), size=(dp(12), dp(12)))
+        with swatch.canvas:
+            Color(*color)
+            rect = Rectangle(pos=swatch.pos, size=swatch.size)
+        swatch.bind(pos=lambda inst, val: setattr(rect, "pos", val))
+        swatch_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(12))
+        swatch_cell.add_widget(swatch)
+        entry.add_widget(swatch_cell)
+        entry.add_widget(MDLabel(text=label, font_style="Caption", theme_text_color="Custom", text_color=TEXT_DARK))
+        return entry
+
     def _make_stat(self, row: MDBoxLayout, title: str) -> MDLabel:
         box = MDBoxLayout(orientation="vertical")
-        box.add_widget(MDLabel(text=title, halign="center", theme_text_color="Custom", text_color=TEXT_DARK))
+        box.add_widget(stat_title_label(title))
         value_label = MDLabel(text="-- kWh", bold=True, halign="center", theme_text_color="Custom", text_color=ACCENT)
         box.add_widget(value_label)
         row.add_widget(box)
@@ -141,7 +177,7 @@ class ConsumptionScreen(MDScreen):
         self._refresh_kwh_column()
         self._refresh_summary()
 
-    def _refresh_table(self) -> None:
+    def _refresh_table(self, *_args) -> None:
         self._updating = True
         for i, field in enumerate(self._pct_fields):
             field.text = f"{self.hourly_pct[i]:.2f}"
@@ -163,6 +199,9 @@ class ConsumptionScreen(MDScreen):
             self._kwh_labels[i].text = f"{kwh:.2f}"
         total = sum(self.hourly_pct)
         self.total_pct_label.text = f"Total: {total:.2f}% (must equal 100%)"
+
+        colors = [ACCENT if i < 12 else ON_SURFACE_VARIANT for i in range(len(hourly_kwh))]
+        self.chart.set_data(hourly_kwh, HOUR_LABELS, colors)
 
     def _refresh_summary(self) -> None:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)

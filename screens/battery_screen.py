@@ -13,7 +13,7 @@ from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton, MDRaisedButton
+from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
@@ -27,7 +27,7 @@ from logic.calculations import (
     round_up_to_standard_size,
     split_day_night_kwh,
 )
-from ui_style import ACCENT, TEXT_DARK, WHITE, green_field, top_app_bar, with_bg
+from ui_style import ACCENT, TEXT_DARK, m3_field, primary_button, screen_header, section_card, tonal_button, with_bg
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
 DEFAULT_BATTERY_EFFICIENCY_PCT = 90.0
@@ -46,73 +46,63 @@ class BatteryScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(top_app_bar("Battery Sizing", on_back=self._go_back))
+        root.add_widget(screen_header("Battery Sizing", step=4, on_back=self._go_back))
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(6), padding=dp(10), size_hint_y=None)
+        form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        form.add_widget(self._section_label("Battery Assumptions"))
-        assumptions_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
-        self.dod_field = green_field(
-            hint_text="Depth of Discharge %", input_filter="float", text=f"{DEFAULT_BATTERY_DOD_PCT:.1f}",
+        assumptions_card = section_card("battery-charging", "Battery Assumptions")
+        assumptions_row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
+        self.dod_field = m3_field(
+            "Depth of Discharge %", icon="battery-outline", input_filter="float",
+            text=f"{DEFAULT_BATTERY_DOD_PCT:.1f}",
         )
-        self.efficiency_field = green_field(
-            hint_text="Round Trip Efficiency %", input_filter="float",
+        self.efficiency_field = m3_field(
+            "Round Trip Efficiency %", icon="percent", input_filter="float",
             text=f"{DEFAULT_BATTERY_EFFICIENCY_PCT:.1f}",
         )
         for f in (self.dod_field, self.efficiency_field):
             f.bind(text=lambda *_a: self._recalculate())
             assumptions_row.add_widget(f)
-        form.add_widget(assumptions_row)
+        assumptions_card.add_widget(assumptions_row)
 
-        self.voltage_field = green_field(
-            hint_text="Battery Voltage (V)", input_filter="float", text=f"{DEFAULT_BATTERY_VOLTAGE:.1f}",
+        self.voltage_field = m3_field(
+            "Battery Voltage (V)", icon="flash-outline", input_filter="float", text=f"{DEFAULT_BATTERY_VOLTAGE:.1f}",
         )
         self.voltage_field.bind(text=lambda *_a: self._recalculate())
-        form.add_widget(self.voltage_field)
+        assumptions_card.add_widget(self.voltage_field)
+        form.add_widget(assumptions_card)
 
-        form.add_widget(self._section_label("Recommended Battery Capacity"))
-
+        result_card = section_card("battery-high", "Recommended Battery Capacity")
         self.nighttime_context_label = with_bg(MDLabel(
             text="Nighttime Consumption: -- kWh", theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(24),
         ))
-        form.add_widget(self.nighttime_context_label)
+        result_card.add_widget(self.nighttime_context_label)
 
         result_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.recommended_label = with_bg(MDLabel(
             text="-- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT,
         ))
         result_row.add_widget(self.recommended_label)
-        show_calc_btn = MDRaisedButton(
-            text="SHOW CALCULATION", md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._show_calculation(),
-        )
-        result_row.add_widget(show_calc_btn)
-        form.add_widget(result_row)
+        result_row.add_widget(tonal_button(
+            "SHOW CALCULATION", on_release=self._show_calculation, size_hint_x=None, width=dp(170),
+        ))
+        result_card.add_widget(result_row)
 
         self.usable_capacity_label = with_bg(MDLabel(
             text="Usable Battery Capacity: -- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT,
             size_hint_y=None, height=dp(28),
         ))
-        form.add_widget(self.usable_capacity_label)
+        result_card.add_widget(self.usable_capacity_label)
+        form.add_widget(result_card)
 
-        next_btn = MDRaisedButton(
-            text="Next: System Design", size_hint_x=1, md_bg_color=ACCENT, text_color=WHITE,
-            on_release=lambda *_: self._go_next(),
-        )
-        form.add_widget(next_btn)
+        form.add_widget(primary_button("Next: System Design", on_release=self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
         self.add_widget(root)
-
-    def _section_label(self, text: str) -> MDLabel:
-        return MDLabel(
-            text=text, bold=True, size_hint_y=None, height=dp(24),
-            theme_text_color="Custom", text_color=TEXT_DARK,
-        )
 
     def on_pre_enter(self, *_args) -> None:
         app = MDApp.get_running_app()

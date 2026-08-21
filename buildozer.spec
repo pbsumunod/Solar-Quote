@@ -11,6 +11,7 @@ requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sql
 
 orientation = portrait
 fullscreen = 0
+icon.filename = %(source.dir)s/assets/icon/icon.png
 
 p4a.local_recipes = ./recipes
 
