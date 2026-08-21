@@ -24,7 +24,7 @@ from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
-from logic.chart_series import DOD_FLOOR_COLOR, series_for_result
+from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import ACCENT, TEXT_DARK, m3_field, screen_header, section_card, section_label, tonal_button, with_bg
 from widgets.line_chart import LineChart
@@ -159,33 +159,54 @@ class ReportScreen(MDScreen):
 
         self.preview_label.text = "\n".join(lines)
 
-    def _render_scenario_charts(self, data: dict) -> dict:
-        """Renders each weather scenario's Simulation-tab chart to a standalone PNG
-        (same series/colors as the live chart, via logic/chart_series.py) for the
-        PowerPoint export. Uses Kivy's export_as_image on an off-tree LineChart,
-        which renders into its own offscreen Fbo -- it doesn't need to be added to
-        the Window to work. Images are written under a scratch subfolder of
-        user_data_dir and removed again in _cleanup_chart_images once the pptx has
-        embedded them.
+    def _chart_tmp_dir(self) -> str:
+        app = MDApp.get_running_app()
+        tmp_dir = os.path.join(app.user_data_dir, "chart_tmp")
+        os.makedirs(tmp_dir, exist_ok=True)
+        return tmp_dir
+
+    def _save_chart_png(self, chart: LineChart, image_path: str, label: str) -> str:
+        """Renders an off-tree LineChart to a PNG via Kivy's export_as_image, which
+        renders into its own offscreen Fbo -- the widget doesn't need to be added
+        to the Window to work.
 
         export_to_png()/Image.save() can fail *silently* (returns False, raises
         nothing) if the GPU texture readback comes back with no pixel data --
         observed on-device even though it's reliable on desktop GPU drivers. We
         call the lower-level save() directly so we can check its return value and
-        retry with fresh idle-pumped frames rather than quietly handing pptx a
-        path with nothing behind it (which then fails much later, confusingly,
-        inside python-pptx's own file open)."""
-        app = MDApp.get_running_app()
+        retry with fresh idle-pumped frames rather than quietly handing the export
+        a path with nothing behind it (which then fails much later, confusingly,
+        inside python-pptx's/fpdf2's own file open)."""
+        from kivy.base import EventLoop
+        EventLoop.ensure_window()
+
+        saved = False
+        for _attempt in range(5):
+            # The axis tick Labels' textures are generated on a Clock trigger,
+            # and the GPU needs a moment to finish rendering the Fbo -- pump a
+            # few idle frames before each attempt, not just the first.
+            for _ in range(3):
+                EventLoop.idle()
+            saved = chart.export_as_image().save(image_path, flipped=False)
+            if saved and os.path.exists(image_path):
+                break
+        if not saved:
+            raise RuntimeError(
+                f"Could not render the {label} chart image "
+                "(the device's graphics driver returned no image data after 5 attempts)."
+            )
+        return image_path
+
+    def _render_scenario_charts(self, data: dict) -> dict:
+        """Renders each weather scenario's Simulation-tab chart to a standalone PNG
+        (same series/colors as the live chart, via logic/chart_series.py), for the
+        PowerPoint export."""
         battery_total_kwh = data["battery"]["total_kwh"]
         battery_dod_pct = data["battery"]["dod_pct"]
         dod_floor_kwh = battery_total_kwh * (1 - battery_dod_pct / 100)
         hline = {"y": dod_floor_kwh, "label": "DOD Floor", "color": DOD_FLOOR_COLOR}
         scenario_results = data["simulation"]["scenario_results"]
-        tmp_dir = os.path.join(app.user_data_dir, "chart_tmp")
-        os.makedirs(tmp_dir, exist_ok=True)
-
-        from kivy.base import EventLoop
-        EventLoop.ensure_window()
+        tmp_dir = self._chart_tmp_dir()
 
         images = {}
         for name in SCENARIO_ORDER:
@@ -196,32 +217,27 @@ class ReportScreen(MDScreen):
             chart = LineChart(size_hint=(None, None), size=(1600, 700))
             chart.set_data(series, x_labels, hline=hline)
             image_path = os.path.join(tmp_dir, f"chart_{name.lower()}.png")
-
-            saved = False
-            for _attempt in range(5):
-                # The axis tick Labels' textures are generated on a Clock trigger,
-                # and the GPU needs a moment to finish rendering the Fbo -- pump a
-                # few idle frames before each attempt, not just the first.
-                for _ in range(3):
-                    EventLoop.idle()
-                saved = chart.export_as_image().save(image_path, flipped=False)
-                if saved and os.path.exists(image_path):
-                    break
-            if not saved:
-                raise RuntimeError(
-                    f"Could not render the {name} scenario chart image "
-                    "(the device's graphics driver returned no image data after 5 attempts)."
-                )
-            images[name] = image_path
+            images[name] = self._save_chart_png(chart, image_path, f"{name} scenario")
         return images
 
-    def _cleanup_chart_images(self, chart_images: dict) -> None:
-        for path in chart_images.values():
+    def _render_roi_chart(self, data: dict) -> str:
+        """Renders the ROI screen's cumulative-cash-flow chart (same series/colors
+        as the live chart, via logic/chart_series.py) to a standalone PNG, for the
+        PDF and PowerPoint exports."""
+        roi = data["roi"]
+        series, x_labels, vline = roi_chart_series(roi["system_cost"], roi["projection_rows"], roi["payback_years"])
+        chart = LineChart(size_hint=(None, None), size=(1600, 700))
+        chart.set_data(series, x_labels, vline=vline, fill_index=0)
+        image_path = os.path.join(self._chart_tmp_dir(), "chart_roi.png")
+        return self._save_chart_png(chart, image_path, "ROI")
+
+    def _cleanup_chart_images(self, image_paths: list) -> None:
+        for path in image_paths:
             try:
                 os.remove(path)
             except OSError:
                 pass
-        tmp_dir = os.path.dirname(next(iter(chart_images.values()), "")) or ""
+        tmp_dir = os.path.dirname(image_paths[0]) if image_paths else ""
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
@@ -232,23 +248,27 @@ class ReportScreen(MDScreen):
         filenames = {"pdf": "solar_proposal.pdf", "excel": "solar_proposal.xlsx",
                      "csv": "solar_proposal.csv", "pptx": "solar_proposal.pptx"}
         path = os.path.join(out_dir, filenames[kind])
-        chart_images = {}
+        chart_image_paths = []
         try:
             if kind == "pdf":
-                generate_pdf(path, data)
+                roi_chart_image = self._render_roi_chart(data)
+                chart_image_paths = [roi_chart_image]
+                generate_pdf(path, data, roi_chart_image=roi_chart_image)
             elif kind == "excel":
                 generate_excel(path, data)
             elif kind == "csv":
                 generate_csv(path, data)
             elif kind == "pptx":
                 chart_images = self._render_scenario_charts(data)
-                generate_pptx(path, data, chart_images=chart_images)
+                roi_chart_image = self._render_roi_chart(data)
+                chart_image_paths = list(chart_images.values()) + [roi_chart_image]
+                generate_pptx(path, data, chart_images=chart_images, roi_chart_image=roi_chart_image)
         except Exception as exc:
             self._show_message("Export Failed", f"Could not generate the {kind.upper()} report:\n{exc}")
             return
         finally:
-            if chart_images:
-                self._cleanup_chart_images(chart_images)
+            if chart_image_paths:
+                self._cleanup_chart_images(chart_image_paths)
         self._show_message("Exported", f"Saved to:\n{path}")
 
     def _show_message(self, title: str, text: str) -> None:

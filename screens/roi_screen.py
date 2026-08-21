@@ -22,6 +22,7 @@ from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
 
+from logic.chart_series import CASH_FLOW_COLOR, PAYBACK_COLOR, roi_chart_series
 from logic.financial import (
     annual_electricity_cost_without_solar,
     annual_grid_cost_with_solar,
@@ -38,9 +39,6 @@ from ui_style import (
 )
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
-
-CASH_FLOW_COLOR = (0.15, 0.42, 0.75, 1)
-PAYBACK_COLOR = (0.42, 0.25, 0.65, 1)
 
 DEFAULT_WEATHER_MIX = {"Sunny": 60.0, "Cloudy": 25.0, "Rainy": 15.0}
 DEFAULT_INFLATION_PCT = 3.0
@@ -281,12 +279,8 @@ class RoiScreen(MDScreen):
         self.net_benefit_label.text = f"P{nb:,.0f}"
         self.roi_pct_label.text = f"{roi:.1f}%"
 
-        x_labels = ["0"] + [str(row.year) for row in rows]
-        cumulative = [-system_cost] + [row.cumulative_cash_flow for row in rows]
-        vline = None
-        if payback is not None:
-            vline = {"x": payback, "label": f"Payback ({payback:.1f} yrs)", "color": PAYBACK_COLOR}
-        self.chart.set_data([(cumulative, CASH_FLOW_COLOR)], x_labels, vline=vline, fill_index=0)
+        series, x_labels, vline = roi_chart_series(system_cost, rows, payback)
+        self.chart.set_data(series, x_labels, vline=vline, fill_index=0)
 
         self._last_rows = rows
         self._refresh_table()

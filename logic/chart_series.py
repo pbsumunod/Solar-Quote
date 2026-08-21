@@ -18,6 +18,24 @@ SERIES_COLORS = {
 # Battery curve itself dips down to meet it (same hue would visually merge).
 DOD_FLOOR_COLOR = (0.02, 0.28, 0.08, 1)
 
+# Used by both the ROI screen's live cash-flow chart and the Report screen's
+# PDF/PowerPoint ROI chart export, so both draw the same colors.
+CASH_FLOW_COLOR = (0.15, 0.42, 0.75, 1)
+PAYBACK_COLOR = (0.42, 0.25, 0.65, 1)
+
+
+def roi_chart_series(
+    system_cost: float, projection_rows: list, payback_years: float | None,
+) -> tuple[list[tuple], list[str], dict | None]:
+    """Cumulative cash-flow series for the ROI screen's live chart and the
+    Report screen's PDF/PowerPoint export -- both draw the exact same line."""
+    x_labels = ["0"] + [str(row.year) for row in projection_rows]
+    cumulative = [-system_cost] + [row.cumulative_cash_flow for row in projection_rows]
+    vline = None
+    if payback_years is not None:
+        vline = {"x": payback_years, "label": f"Payback ({payback_years:.1f} yrs)", "color": PAYBACK_COLOR}
+    return [(cumulative, CASH_FLOW_COLOR)], x_labels, vline
+
 
 def series_for_result(result, battery_total_kwh: float) -> tuple[list[tuple], list[str], list]:
     hours = list(result.hours)

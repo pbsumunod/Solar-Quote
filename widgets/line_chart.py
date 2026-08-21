@@ -21,19 +21,20 @@ TICK_EVERY = 3
 MARKER_RADIUS = dp(2.6)
 
 
-def _y_reference_values(y_min: float, y_max: float) -> tuple[float, float]:
-    """At least 2 distinct reference values for the y-axis, preferring whole
-    numbers. If y_min/y_max round to the same whole number (the series barely
-    moves), whole numbers can't tell them apart -- fall back to two points
-    evenly dividing the actual range instead, so the axis still shows something
-    meaningful rather than the same number twice."""
-    r_min, r_max = round(y_min), round(y_max)
-    if r_max != r_min:
-        return float(r_min), float(r_max)
+def _y_reference_values(y_min: float, y_max: float, count: int = 4) -> list[float]:
+    """`count` evenly-spaced reference values for the y-axis (min, max, and
+    count-2 points between them), preferring whole numbers. If the series barely
+    moves, rounding every point to the nearest whole number can collide (several
+    points landing on the same integer) -- when that happens, fall back to the
+    raw evenly-divided points instead, so the axis still shows `count` distinct
+    values rather than repeating the same number."""
     if y_max == y_min:
-        return y_min, y_max
-    third = (y_max - y_min) / 3
-    return y_min + third, y_min + 2 * third
+        return [y_min] * count
+    raw = [y_min + i * (y_max - y_min) / (count - 1) for i in range(count)]
+    rounded = [round(v) for v in raw]
+    if len(set(rounded)) == count:
+        return [float(v) for v in rounded]
+    return raw
 
 
 class LineChart(Widget):
@@ -157,12 +158,11 @@ class LineChart(Widget):
                 Color(*self._hline.get("color", (0.4, 0.25, 0.6, 1)))
                 Line(points=[x0, hy, x1, hy], width=2.4, dash_length=10, dash_offset=6)
 
-        ref_lo, ref_hi = _y_reference_values(y_min + pad, y_max - pad)
-        for side in ("left", "right"):
-            self._add_y_label(f"{ref_hi:.0f}" if ref_hi == round(ref_hi) else f"{ref_hi:.1f}",
-                               x0 if side == "left" else x1, y1, top=True, side=side)
-            self._add_y_label(f"{ref_lo:.0f}" if ref_lo == round(ref_lo) else f"{ref_lo:.1f}",
-                               x0 if side == "left" else x1, y0, top=False, side=side)
+        for value in _y_reference_values(y_min + pad, y_max - pad):
+            text = f"{value:.0f}" if value == round(value) else f"{value:.1f}"
+            ref_y = px(0, value)[1]
+            for side in ("left", "right"):
+                self._add_y_label(text, x0 if side == "left" else x1, ref_y, side=side)
 
         if self._vline is not None:
             vx = px(self._vline["x"], 0)[0]
@@ -198,13 +198,15 @@ class LineChart(Widget):
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
 
-    def _add_y_label(self, text: str, x: float, y: float, top: bool, side: str = "left") -> None:
+    def _add_y_label(self, text: str, x: float, y: float, side: str = "left") -> None:
+        """y is the exact pixel height the value maps to on the plot -- the label
+        is vertically centered on it."""
         lbl = Label(
             text=text, font_size="9sp", color=(0.3, 0.3, 0.3, 1),
             size_hint=(None, None), size=(dp(32), dp(14)),
             halign="right" if side == "left" else "left",
         )
         x_offset = -dp(34) if side == "left" else dp(2)
-        lbl.pos = (x + x_offset, y + (-dp(4) if top else -dp(10)))
+        lbl.pos = (x + x_offset, y - dp(7))
         self.add_widget(lbl)
         self._tick_labels.append(lbl)
