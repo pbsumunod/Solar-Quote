@@ -9,6 +9,7 @@ Project.to_fields()/from_row() round-trip are unchanged from the desktop version
 that logic was never Qt-specific.
 """
 
+import json
 import re
 from datetime import date
 
@@ -25,13 +26,18 @@ from db import database
 from logic.geo_data import COUNTRY_LATITUDES
 from logic.models import Project
 from ui_style import (
-    ACCENT, ON_SURFACE_VARIANT, m3_field, picker_field, primary_button,
-    project_row, save_button, screen_header, section_card,
+    ACCENT, ON_SURFACE_VARIANT, about_button, m3_field, picker_field, primary_button,
+    project_row, screen_header, section_card,
 )
 
 DAY_NIGHT_RATIOS = ["10/90", "20/80", "30/70", "40/60", "50/50", "60/40", "70/30", "80/20", "90/10"]
 DEFAULT_ELECTRICITY_RATE = 14.50
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+# The other 6 wizard steps, in the order their state is nested under a saved
+# project's quote_data JSON blob -- Client Info itself is already covered by
+# the project's own plain columns, so it isn't included here.
+QUOTE_STEP_SCREENS = ["consumption", "solar", "battery", "system_design", "simulation", "roi"]
 
 
 class ClientScreen(MDScreen):
@@ -54,7 +60,7 @@ class ClientScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Client Information", step=1, show_logo=True,
-            right_widget=save_button(on_release=self._save_project),
+            right_widget=about_button(self._go_about),
         ))
 
         scroll = ScrollView()
@@ -159,6 +165,7 @@ class ClientScreen(MDScreen):
         row = database.get_project(project_id)
         if row is not None:
             self._apply_project(Project.from_row(row))
+            self._apply_quote_data(row["quote_data"])
 
     def _open_overflow_menu(self) -> None:
         items = [
@@ -242,25 +249,48 @@ class ClientScreen(MDScreen):
         self._apply_project(Project(daytime_ratio_pct=70, electricity_rate=DEFAULT_ELECTRICITY_RATE))
         self.project_row_widget._value_label.text = "Unsaved new project"
 
-    def _save_project(self) -> None:
+    def _apply_quote_data(self, quote_data_json: str) -> None:
+        """Restores Consumption through Savings & ROI's editable fields from a
+        saved project's quote_data JSON blob (empty/legacy rows -- '{}' -- just
+        reset every step to its own defaults, same as a brand new project)."""
+        try:
+            quote_data = json.loads(quote_data_json) if quote_data_json else {}
+        except (TypeError, ValueError):
+            quote_data = {}
+        app = MDApp.get_running_app()
+        for name in QUOTE_STEP_SCREENS:
+            app.root.get_screen(name).apply_state(quote_data.get(name, {}))
+
+    def _collect_quote_data(self) -> str:
+        app = MDApp.get_running_app()
+        quote_data = {name: app.root.get_screen(name).collect_state() for name in QUOTE_STEP_SCREENS}
+        return json.dumps(quote_data)
+
+    def save_full_quote(self) -> bool:
+        """Persists the whole quote -- Client Info plus every step through Savings
+        & ROI -- to the current (or a newly created) project row. Called from the
+        Report screen's Save action, the last step, so a save always captures the
+        full flow rather than only the Client Information fields entered first."""
         try:
             project = self._collect_project()
         except ValueError:
-            self._show_message("Invalid Data", "Please enter valid numbers.")
-            return
+            self._show_message("Invalid Data", "Please enter valid numbers on the Client Information step.")
+            return False
         error = self._validate(project)
         if error:
-            self._show_message("Invalid Data", error)
-            return
+            self._show_message("Invalid Data", f"{error} (Client Information step)")
+            return False
 
+        fields = project.to_fields()
+        fields["quote_data"] = self._collect_quote_data()
         if self.current_project_id is None:
-            self.current_project_id = database.create_project(project.to_fields())
+            self.current_project_id = database.create_project(fields)
         else:
-            database.update_project(self.current_project_id, project.to_fields())
+            database.update_project(self.current_project_id, fields)
 
         row = database.get_project(self.current_project_id)
         self.project_row_widget._value_label.text = f"{row['client_name']} - {row['project_date']}"
-        self._show_message("Saved", f"Project saved for {project.client_name}.")
+        return True
 
     def _duplicate_project(self) -> None:
         if self.current_project_id is None:
@@ -277,6 +307,11 @@ class ClientScreen(MDScreen):
             return
         database.delete_project(self.current_project_id)
         self._new_project()
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         try:

@@ -34,8 +34,8 @@ from logic.financial import (
     total_electricity_savings,
 )
 from ui_style import (
-    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, framed_label, m3_field, picker_field,
-    primary_button, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
+    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, m3_field, picker_field,
+    nav_row, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
@@ -68,7 +68,9 @@ class RoiScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Savings & ROI", step=7, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Savings & ROI", step=7, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -160,7 +162,7 @@ class RoiScreen(MDScreen):
         self.table_container = MDBoxLayout(orientation="vertical", size_hint_y=None, height=0)
         form.add_widget(self.table_container)
 
-        form.add_widget(primary_button("Next: Report", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: Report", self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -310,6 +312,35 @@ class RoiScreen(MDScreen):
             "projection_rows": rows,
         }
 
+    def collect_state(self) -> dict:
+        return {
+            "inflation_pct": self._float(self.inflation_field, DEFAULT_INFLATION_PCT),
+            "export_rate": self._float(self.export_rate_field, DEFAULT_EXPORT_RATE),
+            "maintenance_method": self.maintenance_method,
+            "maintenance_pct": self._float(self.maintenance_pct_field, DEFAULT_MAINTENANCE_PCT),
+            "maintenance_fixed": self._float(self.maintenance_fixed_field, DEFAULT_MAINTENANCE_FIXED),
+            "maintenance_inflation_pct": self._float(self.maintenance_inflation_field, 0.0),
+            "years": self._int(self.years_field, DEFAULT_SIMULATION_YEARS),
+            "system_cost": self._system_cost(),
+            "weather_mix": self._weather_mix_pct(),
+        }
+
+    def apply_state(self, data: dict) -> None:
+        self.inflation_field.text = f"{data.get('inflation_pct', DEFAULT_INFLATION_PCT):.1f}"
+        self.export_rate_field.text = f"{data.get('export_rate', DEFAULT_EXPORT_RATE):.2f}"
+        self.maintenance_method = data.get("maintenance_method", "percentage")
+        label = MAINTENANCE_METHODS[0] if self.maintenance_method == "percentage" else MAINTENANCE_METHODS[1]
+        self.maintenance_method_field.set_value(label)
+        self.maintenance_pct_field.text = f"{data.get('maintenance_pct', DEFAULT_MAINTENANCE_PCT):.2f}"
+        self.maintenance_fixed_field.text = f"{data.get('maintenance_fixed', DEFAULT_MAINTENANCE_FIXED):.2f}"
+        self.maintenance_inflation_field.text = f"{data.get('maintenance_inflation_pct', 0.0):.2f}"
+        self.years_field.text = str(data.get("years", DEFAULT_SIMULATION_YEARS))
+        self.system_cost_field.text = f"{data.get('system_cost', 0.0):.2f}"
+        weather_mix = data.get("weather_mix") or {}
+        for name, field in self._mix_fields.items():
+            field.text = f"{weather_mix.get(name, DEFAULT_WEATHER_MIX[name]):.1f}"
+        self._recalculate()
+
     def _toggle_table(self) -> None:
         self._table_expanded = not self._table_expanded
         self.table_toggle_btn.text = "Hide Financial Table" if self._table_expanded else "Show Financial Table"
@@ -371,6 +402,11 @@ class RoiScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "simulation"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

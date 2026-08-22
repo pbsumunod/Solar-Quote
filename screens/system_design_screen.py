@@ -23,7 +23,7 @@ from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import INVERTER_KW_TIERS, required_inverter_kw, round_up_to_standard_size
 from ui_style import (
-    ACCENT, TEXT_DARK, m3_field, primary_button, screen_header, section_card, section_label,
+    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, section_label,
     tonal_button, warning_row, with_bg,
 )
 
@@ -48,7 +48,9 @@ class SystemDesignScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("System Design", step=5, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "System Design", step=5, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -110,7 +112,7 @@ class SystemDesignScreen(MDScreen):
         self.final_battery_label = self._summary_line(summary_card, "Battery")
         form.add_widget(summary_card)
 
-        form.add_widget(primary_button("Next: Simulation", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: Simulation", self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -230,6 +232,29 @@ class SystemDesignScreen(MDScreen):
             "warnings": self._warning_items(),
         }
 
+    def collect_state(self) -> dict:
+        return {
+            "max_pv_input_kw": self._float(self.max_pv_input_field, DEFAULT_MAX_PV_INPUT),
+            "max_pv_charging_kw": self._float(self.max_pv_charging_field, DEFAULT_MAX_PV_CHARGING),
+            "max_battery_charge_kw": self._float(self.max_battery_charge_field, DEFAULT_MAX_BATTERY_CHARGE),
+            "max_battery_discharge_kw": self._float(
+                self.max_battery_discharge_field, DEFAULT_MAX_BATTERY_DISCHARGE,
+            ),
+            "efficiency_pct": self._float(self.inverter_efficiency_field, DEFAULT_INVERTER_EFFICIENCY_PCT),
+        }
+
+    def apply_state(self, data: dict) -> None:
+        self.max_pv_input_field.text = f"{data.get('max_pv_input_kw', DEFAULT_MAX_PV_INPUT):.2f}"
+        self.max_pv_charging_field.text = f"{data.get('max_pv_charging_kw', DEFAULT_MAX_PV_CHARGING):.2f}"
+        self.max_battery_charge_field.text = f"{data.get('max_battery_charge_kw', DEFAULT_MAX_BATTERY_CHARGE):.2f}"
+        self.max_battery_discharge_field.text = (
+            f"{data.get('max_battery_discharge_kw', DEFAULT_MAX_BATTERY_DISCHARGE):.2f}"
+        )
+        self.inverter_efficiency_field.text = (
+            f"{data.get('efficiency_pct', DEFAULT_INVERTER_EFFICIENCY_PCT):.1f}"
+        )
+        self._recalculate_recommendation()
+
     def _show_calculation(self) -> None:
         required_kw = self._required_kw()
         recommended = self._recommended_kw()
@@ -252,6 +277,11 @@ class SystemDesignScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "battery"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

@@ -3,6 +3,7 @@ from kivymd.uix.screenmanager import MDScreenManager
 
 from app_state import AppState
 from db import database
+from screens.about_screen import AboutScreen
 from screens.battery_screen import BatteryScreen
 from screens.client_screen import ClientScreen
 from screens.consumption_screen import ConsumptionScreen
@@ -16,6 +17,7 @@ from screens.system_design_screen import SystemDesignScreen
 
 class SolarClientFinderApp(MDApp):
     def build(self):
+        self.title = "SolarQuote"
         self.state = AppState()
         database.configure(self.user_data_dir)
         database.init_db()
@@ -25,6 +27,7 @@ class SolarClientFinderApp(MDApp):
         sm = MDScreenManager()
         sm.add_widget(OnboardingScreen())
         sm.add_widget(ClientScreen())
+        sm.add_widget(AboutScreen())
         sm.add_widget(ConsumptionScreen())
         sm.add_widget(SolarScreen())
         sm.add_widget(BatteryScreen())

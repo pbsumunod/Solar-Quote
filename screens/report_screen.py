@@ -31,12 +31,11 @@ from kivymd.uix.screen import MDScreen
 
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
-from ui_style import ACCENT, TEXT_DARK, m3_field, screen_header, section_card, section_label, tonal_button, with_bg
+from ui_style import (
+    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, header_actions, icon_button, m3_field, save_button,
+    screen_header, section_card, section_label, tonal_button, with_bg,
+)
 from widgets.line_chart import LineChart
-
-# Bumped by hand on each delivered build -- shown at the bottom of this screen so
-# a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-08-21-k"
 
 MIME_TYPES = {
     "pdf": "application/pdf",
@@ -76,7 +75,14 @@ class ReportScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Report", step=8, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Report", step=8, on_back=self._go_back,
+            right_widget=header_actions(
+                about_button(self._go_about),
+                icon_button("home-outline", on_release=self._go_home, color=ACCENT),
+                save_button(on_release=self._save_project),
+            ),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -339,6 +345,10 @@ class ReportScreen(MDScreen):
         buttons = []
         if platform == "android":
             buttons.append(MDFlatButton(
+                text="VIEW", text_color=ACCENT,
+                on_release=lambda *_: self._view_file(path, mime_type),
+            ))
+            buttons.append(MDFlatButton(
                 text="EMAIL TO CLIENT", text_color=ACCENT,
                 on_release=lambda *_: self._email_to_client(path, mime_type, client_email),
             ))
@@ -365,6 +375,27 @@ class ReportScreen(MDScreen):
         File = autoclass("java.io.File")
         activity = PythonActivity.mActivity
         return activity, FileProviderClass.getUriForFile(activity, FILEPROVIDER_AUTHORITY, File(path))
+
+    def _view_file(self, path: str, mime_type: str) -> None:
+        """Opens the exported file with whatever app is already installed and
+        registered to handle it (a PDF reader, Office/WPS/Google Slides for
+        .pptx) -- the same ACTION_VIEW behavior as tapping the file in a file
+        manager, so the report is shown without this app needing to build and
+        ship its own PDF/PPTX renderer."""
+        try:
+            from jnius import autoclass, cast
+            Intent = autoclass("android.content.Intent")
+            activity, uri = self._content_uri_for(path)
+
+            intent = Intent(Intent.ACTION_VIEW)
+            intent.setDataAndType(cast("android.net.Uri", uri), mime_type)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            activity.startActivity(intent)
+        except Exception as exc:
+            self._show_message(
+                "Can't Open File",
+                f"No app on this device is set up to open this file type:\n{exc}",
+            )
 
     def _share_file(self, path: str, mime_type: str) -> None:
         """Opens Android's native share sheet (WhatsApp, Viber, Telegram,
@@ -417,6 +448,24 @@ class ReportScreen(MDScreen):
         except Exception as exc:
             self._show_message("Email Failed", f"Could not open an email app:\n{exc}")
 
+    def _save_project(self) -> None:
+        app = MDApp.get_running_app()
+        client_screen = app.root.get_screen("client")
+        if client_screen.save_full_quote():
+            self._show_message(
+                "Saved",
+                "The full quote -- Client Information through Savings & ROI -- has been saved.",
+            )
+
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "roi"
+
+    def _go_home(self) -> None:
+        app = MDApp.get_running_app()
+        app.root.current = "client"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"

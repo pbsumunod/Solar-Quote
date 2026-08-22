@@ -9,12 +9,10 @@ from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFlatButton
-from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
-from ui_style import ACCENT, LOGO_PATH, ON_SURFACE, ON_SURFACE_VARIANT, primary_button, section_card
+from ui_style import LOGO_PATH, ON_SURFACE, ON_SURFACE_VARIANT, primary_button, section_card
 
 FEATURES = [
     ("auto-fix", "Auto-Sized Systems",
@@ -32,7 +30,6 @@ class OnboardingScreen(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = "onboarding"
-        self._dialog: MDDialog | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -68,12 +65,11 @@ class OnboardingScreen(MDScreen):
             card.add_widget(desc_label)
             form.add_widget(card)
 
-        form.add_widget(primary_button("Get Started", on_release=self._get_started))
-
-        about_cell = AnchorLayout(anchor_x="center", size_hint_y=None, height=dp(32))
-        about_btn = MDFlatButton(text="About & Credits", text_color=ACCENT, on_release=lambda *_: self._show_credits())
-        about_cell.add_widget(about_btn)
-        form.add_widget(about_cell)
+        cta_cell = AnchorLayout(anchor_x="center", size_hint_y=None, height=dp(48))
+        cta_cell.add_widget(primary_button(
+            "Get Started", on_release=self._get_started, size_hint_x=None, width=dp(220),
+        ))
+        form.add_widget(cta_cell)
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -82,16 +78,3 @@ class OnboardingScreen(MDScreen):
     def _get_started(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "client"
-
-    def _show_credits(self) -> None:
-        if self._dialog:
-            self._dialog.dismiss()
-        self._dialog = MDDialog(
-            title="About SolarQuote",
-            text=(
-                "SolarQuote helps installers size solar + battery systems and generate "
-                "client-ready proposals.\n\nContact the developer:\npamela.sumunod@gmail.com"
-            ),
-            buttons=[MDFlatButton(text="OK", text_color=ACCENT, on_release=lambda *_: self._dialog.dismiss())],
-        )
-        self._dialog.open()

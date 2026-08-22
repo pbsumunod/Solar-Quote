@@ -26,7 +26,9 @@ from logic.calculations import (
     required_solar_kw,
     round_up_to_standard_size,
 )
-from ui_style import ACCENT, TEXT_DARK, m3_field, primary_button, screen_header, section_card, tonal_button, with_bg
+from ui_style import (
+    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
+)
 
 DEFAULT_PEAK_SUN_HOURS = 4.5
 DEFAULT_SYSTEM_EFFICIENCY_PCT = 80.0
@@ -44,7 +46,9 @@ class SolarScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Solar Sizing", step=3, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Solar Sizing", step=3, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -81,7 +85,7 @@ class SolarScreen(MDScreen):
         result_card.add_widget(self.note_label)
         form.add_widget(result_card)
 
-        form.add_widget(primary_button("Next: Battery Sizing", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: Battery Sizing", self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -126,6 +130,17 @@ class SolarScreen(MDScreen):
             "total_kw": self._recommended_kw(),
         }
 
+    def collect_state(self) -> dict:
+        return {
+            "peak_sun_hours": self._float(self.peak_sun_hours_field, DEFAULT_PEAK_SUN_HOURS),
+            "efficiency_pct": self._float(self.efficiency_field, DEFAULT_SYSTEM_EFFICIENCY_PCT),
+        }
+
+    def apply_state(self, data: dict) -> None:
+        self.peak_sun_hours_field.text = f"{data.get('peak_sun_hours', DEFAULT_PEAK_SUN_HOURS):.2f}"
+        self.efficiency_field.text = f"{data.get('efficiency_pct', DEFAULT_SYSTEM_EFFICIENCY_PCT):.1f}"
+        self._recalculate()
+
     def _show_calculation(self) -> None:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)
         peak_sun_hours = self._float(self.peak_sun_hours_field, DEFAULT_PEAK_SUN_HOURS)
@@ -152,6 +167,11 @@ class SolarScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "consumption"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

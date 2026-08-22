@@ -35,7 +35,7 @@ from logic.simulation import (
     run_steady_state_simulation,
 )
 from ui_style import (
-    HEADER_BG, TEXT_DARK, WHITE, framed_label, picker_field, primary_button,
+    HEADER_BG, TEXT_DARK, WHITE, about_button, framed_label, nav_row, picker_field,
     screen_header, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
@@ -75,7 +75,9 @@ class SimulationScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Simulation", step=6, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Simulation", step=6, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         self.big_bg = WeatherBackground(self.active_scenario)
         scroll = ScrollView()
@@ -127,7 +129,7 @@ class SimulationScreen(MDScreen):
         self.table_container = MDBoxLayout(orientation="vertical", size_hint_y=None, height=0)
         form.add_widget(self.table_container)
 
-        form.add_widget(primary_button("Next: Savings & ROI", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: Savings & ROI", self._go_next))
 
         scroll.add_widget(form)
         self.big_bg.add_widget(scroll)
@@ -314,9 +316,32 @@ class SimulationScreen(MDScreen):
             "harvest_pct": list(self.harvest_pct),
         }
 
+    def collect_state(self) -> dict:
+        return {
+            "weather_factors": {n: self._float(f, DEFAULT_WEATHER_FACTORS[n])
+                                 for n, f in self._weather_fields.items()},
+            "active_scenario": self.active_scenario,
+            "export_enabled": self.export_checkbox.active,
+        }
+
+    def apply_state(self, data: dict) -> None:
+        weather_factors = data.get("weather_factors") or {}
+        for name, field in self._weather_fields.items():
+            field.text = f"{weather_factors.get(name, DEFAULT_WEATHER_FACTORS[name]):.1f}"
+        self.active_scenario = data.get("active_scenario", "Sunny")
+        self.scenario_field.set_value(self.active_scenario)
+        self.export_checkbox.active = data.get("export_enabled", True)
+        self._retheme()
+        self._recalculate()
+
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "system_design"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

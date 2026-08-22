@@ -7,7 +7,7 @@ actual math (daily/day/night/peak, per-hour kWh) still comes from the ported
 logic/calculations.py, unchanged from the desktop version.
 """
 
-from kivy.graphics import Color, Rectangle
+from kivy.graphics import Color, Line, Rectangle
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.gridlayout import GridLayout
@@ -28,9 +28,65 @@ from logic.calculations import (
 )
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
-    framed_label, primary_button, screen_header, section_card, section_label, stat_title_label, tonal_button,
+    about_button, framed_label, nav_row, screen_header, section_card, section_label,
+    stat_title_label, tonal_button,
 )
 from widgets.bar_chart import BarChart
+
+
+class _PctField(MDTextField):
+    """MDTextField subclass for the % column cells.
+
+    KivyMD's own textfield.kv binds both `padding` (24dp top / 8dp bottom in
+    "fill" mode, reserved for a floating hint label even with none set) and
+    `height` (`height: self.minimum_height`, so the field always shrinks to
+    fit its own text) to live kv expressions -- not one-time defaults, so a
+    plain Python assignment to either gets silently overwritten again within
+    a fraction of a second (confirmed by reading each back after forcing it).
+    That's harmless for `height` inside a plain BoxLayout/GridLayout row sized
+    to fit its content, but this field sits in a GridLayout row with a FIXED
+    row_default_height, and GridLayout only resizes a child that leaves its
+    own size_hint unset -- with size_hint_y=None here (so this field can have
+    an explicit height at all), the grid just repositions the field at the
+    bottom of its row slot without stretching it, so a field silently shrunk
+    to `minimum_height` renders as an undersized box hugging the row's bottom
+    edge instead of filling it. Re-binding our own fixed values back to both
+    `padding` and `height` whenever KivyMD's own bindings fire wins the race,
+    the same way, for the same reason, on both properties.
+
+    With height forced to a fixed row height taller than a single line of
+    text, top/bottom padding also has to be forced -- Kivy's TextInput always
+    draws its (single) line starting right below the top padding, it doesn't
+    center text in unused vertical space on its own. Vertical padding is
+    computed from the field's own line_height so the text sits centered in
+    whatever height is forced, rather than a hand-picked constant that would
+    only be correct for this exact font size/row height combination.
+    """
+
+    _side_padding = dp(4)
+
+    def __init__(self, **kwargs):
+        self._fixed_height = kwargs.get("height", dp(56))
+        super().__init__(**kwargs)
+        self._apply_fixed_padding()
+        self.height = self._fixed_height
+        self.bind(padding=self._enforce_padding, height=self._enforce_height, line_height=self._apply_fixed_padding)
+
+    def _target_padding(self) -> list:
+        vertical = max(self._side_padding, (self._fixed_height - self.line_height) / 2)
+        return [self._side_padding, vertical, self._side_padding, vertical]
+
+    def _apply_fixed_padding(self, *_args):
+        self.padding = self._target_padding()
+
+    def _enforce_padding(self, _instance, value):
+        target = self._target_padding()
+        if list(value) != target:
+            self.padding = target
+
+    def _enforce_height(self, _instance, value):
+        if value != self._fixed_height:
+            self.height = self._fixed_height
 
 
 class ConsumptionScreen(MDScreen):
@@ -47,7 +103,9 @@ class ConsumptionScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Consumption", step=2, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Consumption", step=2, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -94,7 +152,7 @@ class ConsumptionScreen(MDScreen):
         self.chart = BarChart(size_hint_y=None, height=dp(180))
         form.add_widget(self.chart)
 
-        form.add_widget(primary_button("Next: Solar Sizing", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: Solar Sizing", self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -117,32 +175,59 @@ class ConsumptionScreen(MDScreen):
                            row_default_height=row_h, row_force_default=True)
         grid.bind(minimum_height=grid.setter("height"))
 
-        grid.add_widget(framed_label("Hour", row_h, bold=True, bg=HEADER_BG))
-        grid.add_widget(framed_label("%", row_h, bold=True, bg=HEADER_BG))
-        grid.add_widget(framed_label("kWh", row_h, bold=True, bg=HEADER_BG))
+        grid.add_widget(framed_label("Hour", row_h, bold=True, bg=HEADER_BG, full_border=True))
+        grid.add_widget(framed_label("%", row_h, bold=True, bg=HEADER_BG, full_border=True))
+        grid.add_widget(framed_label("kWh", row_h, bold=True, bg=HEADER_BG, full_border=True))
         for i in indices:
             # Hour column: light green. %/kWh columns: near-white (~10% green tint) --
             # each cell owns an explicit opaque background, nothing relies on bleed-through.
-            grid.add_widget(framed_label(HOUR_LABELS[i], row_h, bg=ACCENT_LIGHT))
-            pct_field = self._pct_cell(i, row_h)
-            grid.add_widget(pct_field)
+            # full_border=True on every cell (not just this table's header row) so the
+            # whole thing reads as one bordered grid, <table>/<td>-style, rather than a
+            # plain list of rows -- makes the boundary of the editable % cells obvious
+            # against their read-only neighbors too.
+            grid.add_widget(framed_label(HOUR_LABELS[i], row_h, bg=ACCENT_LIGHT, full_border=True))
+            cell, pct_field = self._pct_cell(i, row_h)
+            grid.add_widget(cell)
             self._pct_fields.append(pct_field)
-            kwh_label = framed_label("0.00", row_h, bg=NEAR_WHITE)
+            kwh_label = framed_label("0.00", row_h, bg=NEAR_WHITE, full_border=True)
             grid.add_widget(kwh_label)
             self._kwh_labels.append(kwh_label)
         col.add_widget(grid)
         return col
 
-    def _pct_cell(self, index: int, height) -> MDTextField:
-        field = MDTextField(
+    def _pct_cell(self, index: int, height) -> tuple:
+        # KivyMD's own fill/border chrome is switched off entirely (transparent fill,
+        # transparent line in every state) -- the cell's background and border are
+        # instead drawn by hand, at the exact same size as the field itself, in the
+        # same style as the Hour/kWh framed_label cells either side of it (plain
+        # white fill, thin ROW_LINE box, sized to the cell -- not the field's own
+        # rounded/inset chrome). That keeps the % column reading as an ordinary
+        # bordered table cell instead of a separate pill-shaped input floating
+        # inside one. _PctField still overrides "fill" mode's hardcoded top-heavy
+        # padding so the (invisible) fill/text stay vertically centered.
+        field = _PctField(
             text=f"{self.hourly_pct[index]:.2f}", input_filter="float",
-            font_size="13sp", size_hint_y=None, height=height, halign="center",
-            mode="fill", fill_color_normal=NEAR_WHITE, fill_color_focus=WHITE,
+            font_size="13sp", size_hint=(1, None), height=height, halign="center",
+            mode="fill", radius=[0, 0, 0, 0],
+            fill_color_normal=(0, 0, 0, 0), fill_color_focus=(0, 0, 0, 0),
             text_color_normal=TEXT_DARK, text_color_focus=TEXT_DARK,
-            line_color_normal=ROW_LINE, line_color_focus=ACCENT,
+            line_color_normal=(0, 0, 0, 0), line_color_focus=(0, 0, 0, 0),
         )
+        with field.canvas.before:
+            Color(*WHITE)
+            bg_rect = Rectangle(pos=field.pos, size=field.size)
+            border_color = Color(*ROW_LINE)
+            border = Line(rectangle=(0, 0, 0, 0), width=1)
+
+        def _sync_border(instance, _value):
+            bg_rect.pos = instance.pos
+            bg_rect.size = instance.size
+            border.rectangle = (instance.x, instance.y, instance.width, instance.height)
+            border_color.rgba = ACCENT if instance.focus else ROW_LINE
+
+        field.bind(pos=_sync_border, size=_sync_border, focus=_sync_border)
         field.bind(text=lambda _inst, val, idx=index: self._on_pct_changed(idx, val))
-        return field
+        return field, field
 
     def _legend_entry(self, label: str, color: tuple) -> MDBoxLayout:
         entry = MDBoxLayout(spacing=dp(6), size_hint=(None, None), size=(dp(90), dp(20)))
@@ -217,6 +302,20 @@ class ConsumptionScreen(MDScreen):
         app.state.hourly_pct = list(self.hourly_pct)
         app.state.peak_hourly_kwh = peak
 
+    def collect_state(self) -> dict:
+        """The raw, user-editable % table, for full-quote save/restore -- distinct
+        from get_report_data()'s derived kWh figures, which the exported report
+        needs but which aren't enough on their own to reconstruct this table."""
+        return {"hourly_pct": list(self.hourly_pct)}
+
+    def apply_state(self, data: dict) -> None:
+        app = MDApp.get_running_app()
+        self.daytime_pct = app.state.project.daytime_ratio_pct
+        self.hourly_pct = list(data.get("hourly_pct") or default_hourly_percentages(self.daytime_pct))
+        self._refresh_table()
+        self._refresh_kwh_column()
+        self._refresh_summary()
+
     def get_report_data(self) -> dict:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)
         day_kwh, night_kwh = split_day_night_kwh(daily_kwh, self.daytime_pct)
@@ -238,6 +337,11 @@ class ConsumptionScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "client"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

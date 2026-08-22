@@ -44,6 +44,10 @@ ON_SURFACE_VARIANT = (0.282, 0.278, 0.243, 1) # #48473E, secondary/caption text 
 ON_PRIMARY_CONTAINER = (0.078, 0.200, 0.094, 1)  # #143318, text/icon on ACCENT_LIGHT
 
 LOGO_PATH = "assets/images/logo.png"
+APP_VERSION = "0.1.0"  # keep in sync with buildozer.spec's version
+# Bumped by hand on each delivered build -- shown on the Report and About screens
+# so a build can be confirmed at a glance instead of guessed from behavior alone.
+BUILD_LABEL = "2026-08-21-k"
 
 STEP_NAMES = [
     "Client Info", "Consumption", "Solar Sizing", "Battery Sizing",
@@ -53,10 +57,15 @@ STEP_NAMES = [
 
 # --- Table/warning helpers (unchanged) ------------------------------------------
 
-def framed_label(text: str, height, bold: bool = False, bg=CELL_BG, fg=TEXT_DARK) -> MDLabel:
-    """An MDLabel with an explicit opaque background, dark text, and a thin bottom border,
+def framed_label(text: str, height, bold: bool = False, bg=CELL_BG, fg=TEXT_DARK,
+                  full_border: bool = False) -> MDLabel:
+    """An MDLabel with an explicit opaque background, dark text, and a thin border,
     so it reads clearly and rows stay visually separated without relying on a parent
-    background showing through layout spacing (which doesn't reliably clip to content)."""
+    background showing through layout spacing (which doesn't reliably clip to content).
+    full_border=False (the default, unchanged from before) draws only a bottom rule,
+    the plain row-separator look most tables use; full_border=True draws a complete
+    box on all four sides, for a table that should read as a proper <table>/<td> grid
+    (e.g. Consumption's Hourly Load Profile) rather than a list of rows."""
     lbl = MDLabel(
         text=text, bold=bold, font_style="Caption", halign="center",
         size_hint_y=None, height=height,
@@ -66,14 +75,17 @@ def framed_label(text: str, height, bold: bool = False, bg=CELL_BG, fg=TEXT_DARK
         Color(*bg)
         rect = Rectangle(pos=lbl.pos, size=lbl.size)
         Color(*ROW_LINE)
-        border = Line(points=[], width=1)
+        border = Line(rectangle=(0, 0, 0, 0), width=1) if full_border else Line(points=[], width=1)
 
     def _sync(instance, _value):
         rect.pos = instance.pos
         rect.size = instance.size
         x, y = instance.pos
-        w, _h = instance.size
-        border.points = [x, y, x + w, y]
+        w, h = instance.size
+        if full_border:
+            border.rectangle = (x, y, w, h)
+        else:
+            border.points = [x, y, x + w, y]
 
     lbl.bind(pos=_sync, size=_sync)
     return lbl
@@ -166,9 +178,11 @@ def _centered(widget, width) -> AnchorLayout:
 
 # --- M3 page header: top bar + step progress ------------------------------------
 
-def screen_header(title: str, step: int, on_back=None, show_logo: bool = False, right_widget=None) -> MDBoxLayout:
+def screen_header(title: str, step: int | None, on_back=None, show_logo: bool = False, right_widget=None) -> MDBoxLayout:
     """Surface-toned top bar (back arrow or brand logo, screen title) plus an
-    8-step progress track showing where this screen sits in the wizard flow."""
+    8-step progress track showing where this screen sits in the wizard flow.
+    Pass step=None for utility screens outside the wizard (e.g. About) -- the
+    progress track is omitted entirely rather than showing a meaningless step."""
     root = MDBoxLayout(orientation="vertical", size_hint_y=None)
     root.bind(minimum_height=root.setter("height"))
 
@@ -213,6 +227,9 @@ def screen_header(title: str, step: int, on_back=None, show_logo: bool = False, 
     if right_widget is not None:
         bar.add_widget(_centered(right_widget, width=right_widget.width or dp(90)))
     root.add_widget(bar)
+
+    if step is None:
+        return root
 
     progress = MDBoxLayout(
         orientation="vertical", spacing=dp(6), padding=(dp(16), dp(8), dp(16), dp(10)),
@@ -372,6 +389,20 @@ def outlined_button(text: str, on_release=None, danger: bool = False, **kwargs) 
     return btn
 
 
+def header_actions(*widgets) -> MDBoxLayout:
+    """A row of header-right actions sharing the screen_header's right_widget
+    slot (e.g. an About icon alongside Save or Home). Plain BoxLayout doesn't
+    center children on the cross-axis, so a row mixing e.g. a ~48dp icon button
+    with a 36dp pill button would otherwise render them at visibly different
+    vertical centers -- each widget gets the same AnchorLayout-cell centering
+    _centered() already gives a lone right_widget."""
+    row = MDBoxLayout(orientation="horizontal", spacing=dp(4), size_hint=(None, 1))
+    row.bind(minimum_width=row.setter("width"))
+    for w in widgets:
+        row.add_widget(_centered(w, width=w.width or dp(90)))
+    return row
+
+
 def save_button(on_release=None, text: str = "Save", **kwargs) -> MDFillRoundFlatIconButton:
     """A compact tonal pill button for a screen's top-bar Save action."""
     kwargs.setdefault("size_hint", (None, None))
@@ -391,6 +422,24 @@ def icon_button(icon: str, on_release=None, color=ON_SURFACE_VARIANT, **kwargs) 
     if on_release:
         btn.bind(on_release=lambda *_a: on_release())
     return btn
+
+
+def about_button(on_release) -> MDIconButton:
+    """The info icon every screen's header carries through to the About screen."""
+    return icon_button("information-outline", on_release=on_release, color=ACCENT)
+
+
+def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
+    """The bottom Back + Next pair for a wizard step -- Back is a fixed-width,
+    low-emphasis outlined button (the top-left header arrow already covers this
+    action; this is a second, thumb-reachable copy of it), Next stays the
+    screen's primary, full-width-minus-Back call to action. Both are given the
+    same explicit height since outlined_button and primary_button default to
+    different heights (40dp/48dp) -- left alone, the pair would look uneven."""
+    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(96), height=dp(48)))
+    row.add_widget(primary_button(next_text, on_release=on_next, height=dp(48)))
+    return row
 
 
 def section_card(icon: str, title: str) -> MDBoxLayout:

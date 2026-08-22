@@ -27,7 +27,9 @@ from logic.calculations import (
     round_up_to_standard_size,
     split_day_night_kwh,
 )
-from ui_style import ACCENT, TEXT_DARK, m3_field, primary_button, screen_header, section_card, tonal_button, with_bg
+from ui_style import (
+    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
+)
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
 DEFAULT_BATTERY_EFFICIENCY_PCT = 90.0
@@ -46,7 +48,9 @@ class BatteryScreen(MDScreen):
 
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
-        root.add_widget(screen_header("Battery Sizing", step=4, on_back=self._go_back))
+        root.add_widget(screen_header(
+            "Battery Sizing", step=4, on_back=self._go_back, right_widget=about_button(self._go_about),
+        ))
 
         scroll = ScrollView()
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
@@ -98,7 +102,7 @@ class BatteryScreen(MDScreen):
         result_card.add_widget(self.usable_capacity_label)
         form.add_widget(result_card)
 
-        form.add_widget(primary_button("Next: System Design", on_release=self._go_next))
+        form.add_widget(nav_row(self._go_back, "Next: System Design", self._go_next))
 
         scroll.add_widget(form)
         root.add_widget(scroll)
@@ -160,6 +164,19 @@ class BatteryScreen(MDScreen):
             "usable_kwh": battery_usable_capacity_kwh(recommended, dod_pct),
         }
 
+    def collect_state(self) -> dict:
+        return {
+            "dod_pct": self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT),
+            "efficiency_pct": self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT),
+            "voltage": self._float(self.voltage_field, DEFAULT_BATTERY_VOLTAGE),
+        }
+
+    def apply_state(self, data: dict) -> None:
+        self.dod_field.text = f"{data.get('dod_pct', DEFAULT_BATTERY_DOD_PCT):.1f}"
+        self.efficiency_field.text = f"{data.get('efficiency_pct', DEFAULT_BATTERY_EFFICIENCY_PCT):.1f}"
+        self.voltage_field.text = f"{data.get('voltage', DEFAULT_BATTERY_VOLTAGE):.1f}"
+        self._recalculate()
+
     def _show_calculation(self) -> None:
         night_kwh = self._nighttime_kwh()
         dod_pct = self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT)
@@ -183,6 +200,11 @@ class BatteryScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = "solar"
+
+    def _go_about(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.about_return_to = self.name
+        app.root.current = "about"
 
     def _go_next(self) -> None:
         app = MDApp.get_running_app()

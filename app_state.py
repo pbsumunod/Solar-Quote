@@ -10,6 +10,10 @@ class AppState:
         self.hourly_pct: list[float] = []
         self.peak_hourly_kwh: float = 0.0
 
+        # Set by whichever screen opens the About screen (its own name), so About's
+        # back button returns to that screen instead of always jumping to Client.
+        self.about_return_to: str = "client"
+
         # Populated by SolarScreen; read by later screens (Battery, Inverter, Report, etc).
         # solar_total_kw is auto-picked from the same tier catalog as the inverter (see
         # logic.calculations.INVERTER_KW_TIERS) -- no separate panel wattage/count.

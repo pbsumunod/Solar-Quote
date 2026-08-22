@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS projects (
     daytime_ratio_pct INTEGER NOT NULL DEFAULT 70,
     electricity_rate REAL NOT NULL DEFAULT 14.50,
     country TEXT NOT NULL DEFAULT '',
+    quote_data TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -57,6 +58,8 @@ def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(projects)")}
     if "country" not in existing:
         conn.execute("ALTER TABLE projects ADD COLUMN country TEXT NOT NULL DEFAULT ''")
+    if "quote_data" not in existing:
+        conn.execute("ALTER TABLE projects ADD COLUMN quote_data TEXT NOT NULL DEFAULT '{}'")
 
 
 def create_project(fields: dict) -> int:
@@ -65,13 +68,14 @@ def create_project(fields: dict) -> int:
         """
         INSERT INTO projects
             (client_name, project_location, contact_number, email, project_date,
-             notes, monthly_kwh, daytime_ratio_pct, electricity_rate, country)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             notes, monthly_kwh, daytime_ratio_pct, electricity_rate, country, quote_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             fields["client_name"], fields["project_location"], fields["contact_number"],
             fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
             fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
+            fields.get("quote_data", "{}"),
         ),
     )
     conn.commit()
@@ -87,13 +91,14 @@ def update_project(project_id: int, fields: dict) -> None:
         UPDATE projects SET
             client_name = ?, project_location = ?, contact_number = ?, email = ?,
             project_date = ?, notes = ?, monthly_kwh = ?, daytime_ratio_pct = ?,
-            electricity_rate = ?, country = ?, updated_at = datetime('now')
+            electricity_rate = ?, country = ?, quote_data = ?, updated_at = datetime('now')
         WHERE id = ?
         """,
         (
             fields["client_name"], fields["project_location"], fields["contact_number"],
             fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
-            fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""), project_id,
+            fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
+            fields.get("quote_data", "{}"), project_id,
         ),
     )
     conn.commit()

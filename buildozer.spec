@@ -1,5 +1,5 @@
 [app]
-title = Solar Client Finder
+title = SolarQuote
 package.name = solarclientfinder
 package.domain = org.solarclientfinder
 
