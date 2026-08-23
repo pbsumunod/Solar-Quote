@@ -1,0 +1,53 @@
+name: Build Android APK
+
+# Builds the debug APK on a real x86_64 Linux runner via Buildozer/python-for-android.
+# Kept separate from local (Mac) builds since Docker's x86_64-on-Apple-Silicon
+# emulation doesn't support every syscall python-for-android's build needs --
+# GitHub's runners are genuinely x86_64 Linux, so none of that applies here.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "**.py"
+      - "buildozer.spec"
+      - "p4a_hooks.py"
+      - "recipes/**"
+      - "android_res/**"
+      - "assets/**"
+      - ".github/workflows/build-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Buildozer global directory (SDK/NDK)
+        uses: actions/cache@v4
+        with:
+          path: .buildozer_global
+          key: buildozer-global-${{ hashFiles('buildozer.spec') }}
+
+      - name: Cache Buildozer project directory (compiled recipes)
+        uses: actions/cache@v4
+        with:
+          path: .buildozer
+          key: buildozer-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
+          restore-keys: |
+            buildozer-${{ hashFiles('buildozer.spec') }}-
+
+      - name: Build APK
+        id: buildozer
+        uses: ArtemSBulgakov/buildozer-action@v1
+        with:
+          command: buildozer android debug
+          buildozer_version: stable
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: solarquote-debug-apk
+          path: ${{ steps.buildozer.outputs.filename }}
+          if-no-files-found: error

@@ -31,4 +31,4 @@ android.res_xml = android_res/file_paths.xml
 
 [buildozer]
 log_level = 2
-warn_on_root = 1
+warn_on_root = 0
