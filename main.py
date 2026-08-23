@@ -7,6 +7,7 @@ from screens.about_screen import AboutScreen
 from screens.battery_screen import BatteryScreen
 from screens.client_screen import ClientScreen
 from screens.consumption_screen import ConsumptionScreen
+from screens.legal_screen import PrivacyScreen, TermsScreen
 from screens.onboarding_screen import OnboardingScreen
 from screens.report_screen import ReportScreen
 from screens.roi_screen import RoiScreen
@@ -28,6 +29,8 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(OnboardingScreen())
         sm.add_widget(ClientScreen())
         sm.add_widget(AboutScreen())
+        sm.add_widget(TermsScreen())
+        sm.add_widget(PrivacyScreen())
         sm.add_widget(ConsumptionScreen())
         sm.add_widget(SolarScreen())
         sm.add_widget(BatteryScreen())

@@ -19,6 +19,7 @@ generation.
 import os
 import shutil
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
@@ -28,6 +29,7 @@ from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
+from kivymd.uix.spinner import MDSpinner
 
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
@@ -299,6 +301,28 @@ class ReportScreen(MDScreen):
         if getattr(self, "_exporting", False):
             return
         self._exporting = True
+        self._show_loading(f"Generating {kind.upper()} report...")
+        # Report generation (PDF/PPTX chart rendering especially) blocks the
+        # main thread for a few seconds -- scheduling it a frame later lets
+        # Kivy actually paint the loading dialog first instead of freezing
+        # with nothing on screen until the work is done.
+        Clock.schedule_once(lambda _dt: self._do_export(kind), 0)
+
+    def _show_loading(self, text: str) -> None:
+        if self._dialog:
+            self._dialog.dismiss()
+        content = MDBoxLayout(
+            orientation="horizontal", spacing=dp(16), padding=dp(8),
+            size_hint_y=None, height=dp(48),
+        )
+        content.add_widget(MDSpinner(
+            size_hint=(None, None), size=(dp(32), dp(32)), active=True, color=ACCENT,
+        ))
+        content.add_widget(MDLabel(text=text, theme_text_color="Custom", text_color=TEXT_DARK))
+        self._dialog = MDDialog(title="", type="custom", content_cls=content, auto_dismiss=False)
+        self._dialog.open()
+
+    def _do_export(self, kind: str) -> None:
         try:
             app = MDApp.get_running_app()
             data = self._collect_data()

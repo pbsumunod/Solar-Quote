@@ -14,6 +14,7 @@ from the ported logic/simulation.py.
 """
 
 from kivy.metrics import dp
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
@@ -102,9 +103,11 @@ class SimulationScreen(MDScreen):
         form.add_widget(self.scenario_field)
 
         export_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
+        checkbox_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(32))
         self.export_checkbox = MDCheckbox(active=True, size_hint=(None, None), size=(dp(32), dp(32)))
         self.export_checkbox.bind(active=lambda *_a: self._recalculate())
-        export_row.add_widget(self.export_checkbox)
+        checkbox_cell.add_widget(self.export_checkbox)
+        export_row.add_widget(checkbox_cell)
         export_row.add_widget(MDLabel(
             text="Enable Net Metering / Grid Export", theme_text_color="Custom", text_color=TEXT_DARK,
         ))

@@ -5,11 +5,9 @@ screen -- onboarding is a one-time introduction to the app's purpose, while
 this is reference information someone looks up later, so it belongs somewhere
 persistent and revisitable instead of a screen you only see once at cold start).
 
-Terms of Service and Privacy Policy aren't written yet, so their rows open a
-plain "not yet published" notice rather than fabricated legal text. A "rate
-this app" entry is intentionally left out until the app has an actual Play
-Store listing to link to -- a rate button that opens nothing/fails would be
-worse than no button.
+A "rate this app" entry is intentionally left out until the app has an actual
+Play Store listing to link to -- a rate button that opens nothing/fails would
+be worse than no button.
 """
 
 from kivy.metrics import dp
@@ -89,21 +87,17 @@ class AboutScreen(MDScreen):
         contact_card = section_card("email-outline", "Contact & Support")
         contact_row = _LinkRow("domain", DEVELOPER_NAME)
         contact_row.bind(on_release=lambda *_: self._show_notice(
-            "Contact", f"Developed by {DEVELOPER_NAME}\nReach us at:\n{CONTACT_EMAIL}",
+            "Contact", f"Developed by {DEVELOPER_NAME}\nReach us at: {CONTACT_EMAIL}",
         ))
         contact_card.add_widget(contact_row)
         form.add_widget(contact_card)
 
         legal_card = section_card("gavel", "Legal")
         tos_row = _LinkRow("file-document-outline", "Terms of Service")
-        tos_row.bind(on_release=lambda *_: self._show_notice(
-            "Terms of Service", "Terms of Service are not published yet.",
-        ))
+        tos_row.bind(on_release=lambda *_: self._go_to("terms"))
         legal_card.add_widget(tos_row)
         privacy_row = _LinkRow("shield-lock-outline", "Privacy Policy")
-        privacy_row.bind(on_release=lambda *_: self._show_notice(
-            "Privacy Policy", "Privacy Policy is not published yet.",
-        ))
+        privacy_row.bind(on_release=lambda *_: self._go_to("privacy"))
         legal_card.add_widget(privacy_row)
         form.add_widget(legal_card)
 
@@ -119,6 +113,9 @@ class AboutScreen(MDScreen):
             buttons=[MDFlatButton(text="OK", text_color=ACCENT, on_release=lambda *_: self._dialog.dismiss())],
         )
         self._dialog.open()
+
+    def _go_to(self, screen_name: str) -> None:
+        MDApp.get_running_app().root.current = screen_name
 
     def _go_back(self) -> None:
         app = MDApp.get_running_app()

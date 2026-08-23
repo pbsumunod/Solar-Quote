@@ -28,6 +28,19 @@ jobs:
     # autoreconf with "possibly undefined macro: LT_SYS_SYMBOL_USCORE" on 24.04.
     # 22.04 matches the toolchain these recipes actually build cleanly against.
     runs-on: ubuntu-22.04
+    env:
+      # fonttools (a plain pip requirement with no p4a recipe, so it's installed
+      # by running its own setup.py on the x86_64 build host) auto-builds a
+      # compiled Cython accelerator for fontTools.misc.bezierTools whenever
+      # Cython is importable -- which it is here, since Kivy's own recipe needs
+      # the "cython" package installed on the host to cythonize its .pyx
+      # sources before cross-compiling. That leaves an x86_64 bezierTools.so
+      # bundled straight into the arm64-v8a APK, which then fails on-device
+      # with "dlopen failed: ... is for EM_X86_64 (62) instead of EM_AARCH64
+      # (183)". fontTools' setup.py reads this env var to force the pure-Python
+      # build instead of auto-detecting Cython -- see its `env_with_cython`
+      # check -- without touching Kivy's own (separate) cythonizing step.
+      FONTTOOLS_WITH_CYTHON: "0"
     steps:
       - uses: actions/checkout@v4
 
@@ -65,9 +78,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
+          # v2: bumped to bust the previous cache, which had fontTools already
+          # pip-installed with a bad x86_64-compiled bezierTools.so baked in
+          # (see FONTTOOLS_WITH_CYTHON above) -- restore-keys would otherwise
+          # keep restoring that stale install and skip reinstalling it.
+          key: buildozer-v2-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
           restore-keys: |
-            buildozer-${{ hashFiles('buildozer.spec') }}-
+            buildozer-v2-${{ hashFiles('buildozer.spec') }}-
 
       - name: Build APK
         run: yes | buildozer android debug
