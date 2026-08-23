@@ -1,9 +1,11 @@
 name: Build Android APK
 
-# Builds the debug APK on a real x86_64 Linux runner via Buildozer/python-for-android.
-# Kept separate from local (Mac) builds since Docker's x86_64-on-Apple-Silicon
-# emulation doesn't support every syscall python-for-android's build needs --
-# GitHub's runners are genuinely x86_64 Linux, so none of that applies here.
+# Builds the debug APK on a real x86_64 Linux runner via Buildozer/python-for-android
+# directly (no third-party wrapper action -- ArtemSBulgakov/buildozer-action's own
+# Docker image build broke on a stale Ubuntu PPA it depends on). Kept separate from
+# local (Mac) builds since Docker's x86_64-on-Apple-Silicon emulation doesn't support
+# every syscall python-for-android's build needs -- GitHub's runners are genuinely
+# x86_64 Linux, so none of that applies here.
 
 on:
   workflow_dispatch:
@@ -24,10 +26,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config \
+            zlib1g-dev libncurses-dev cmake \
+            libffi-dev libssl-dev automake build-essential
+
+      - name: Install Buildozer
+        run: pip install --upgrade buildozer cython
+
       - name: Cache Buildozer global directory (SDK/NDK)
         uses: actions/cache@v4
         with:
-          path: .buildozer_global
+          path: ~/.buildozer
           key: buildozer-global-${{ hashFiles('buildozer.spec') }}
 
       - name: Cache Buildozer project directory (compiled recipes)
@@ -39,15 +57,11 @@ jobs:
             buildozer-${{ hashFiles('buildozer.spec') }}-
 
       - name: Build APK
-        id: buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        with:
-          command: buildozer android debug
-          buildozer_version: stable
+        run: yes | buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: solarquote-debug-apk
-          path: ${{ steps.buildozer.outputs.filename }}
+          path: bin/*.apk
           if-no-files-found: error
