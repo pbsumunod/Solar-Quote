@@ -34,7 +34,7 @@ from kivymd.uix.spinner import MDSpinner
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import (
-    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, bottom_back_action, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
+    ACCENT, TEXT_DARK, about_button, bottom_back_action, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
     screen_header, section_card, section_label, tonal_button, with_bg,
 )
 from widgets.line_chart import LineChart
@@ -52,21 +52,19 @@ FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
 
 def export_dir(app) -> str:
-    """Return the Android Downloads directory, with a safe app-data fallback."""
+    """Return a writable Android Downloads directory for report exports.
+
+    Android 10+ blocks direct file-path writes to the public Downloads folder;
+    attempting that path produces ``Permission denied`` even when it appears
+    writable. The app-specific Downloads directory is permission-free and is
+    exposed by Android's file managers under the app's Downloads files.
+    """
     if platform == "android":
         try:
             from jnius import autoclass
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
             Environment = autoclass("android.os.Environment")
             context = PythonActivity.mActivity
-            ext_dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            if ext_dir is not None:
-                path = ext_dir.getAbsolutePath()
-                os.makedirs(path, exist_ok=True)
-                if os.access(path, os.W_OK):
-                    return path
-            # Scoped-storage fallback still places files in a Downloads-named
-            # folder when Android does not grant direct public-folder access.
             ext_dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             if ext_dir is not None:
                 return ext_dir.getAbsolutePath()
@@ -138,10 +136,6 @@ class ReportScreen(MDScreen):
         form.add_widget(MDLabel(
             text=DISCLAIMER, theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(90),
-        ))
-        form.add_widget(MDLabel(
-            text=f"Build {BUILD_LABEL}", font_style="Caption", halign="center",
-            theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(20),
         ))
         form.add_widget(bottom_back_action(self._go_back))
 
