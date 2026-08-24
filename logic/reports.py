@@ -20,6 +20,10 @@ built successfully but fails to actually import at runtime on a given device) wo
 crash the whole app before it even opens, not just the Report tab's export buttons.
 """
 
+import importlib.util
+from pathlib import Path
+import sys
+
 from logic.calculations import HOUR_LABELS
 
 DISCLAIMER = (
@@ -188,6 +192,25 @@ def generate_csv(path: str, data: dict) -> None:
 
 # --- PDF export --------------------------------------------------------------
 
+def _use_pure_python_bezier_tools() -> None:
+    """Prevent a host-built fontTools extension from breaking PDF export on Android.
+
+    ``fontTools.misc.bezierTools`` has a pure-Python implementation as well as an
+    optional Cython extension. A build host's x86_64 extension can be accidentally
+    included in an arm64 APK; Python then selects it before the .py file and fails
+    to load fpdf2. Load the portable module explicitly before importing fpdf2.
+    """
+    import fontTools.misc
+
+    module_name = "fontTools.misc.bezierTools"
+    source_path = Path(fontTools.misc.__file__).with_name("bezierTools.py")
+    spec = importlib.util.spec_from_file_location(module_name, source_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("fontTools' portable bezierTools module is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
 def _pdf_heading(pdf, text: str) -> None:
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*PRIMARY_RGB)
@@ -225,6 +248,7 @@ def generate_pdf(
     _render_scenario_charts) -- for each scenario present in both this dict and
     data["simulation"]["scenario_results"], adds a page with that scenario's
     hourly chart and a summary of its totals, in SCENARIO_ORDER."""
+    _use_pure_python_bezier_tools()
     from fpdf import FPDF
 
     client = data["client"]

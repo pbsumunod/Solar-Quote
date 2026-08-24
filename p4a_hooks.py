@@ -40,7 +40,11 @@ def before_apk_assemble(toolchain):
         content = f.read()
 
     if FILEPROVIDER_AUTHORITY in content:
-        return  # already injected (buildozer can call hooks more than once)
+        # The provider may already be present when Buildozer reuses its generated
+        # manifest, but the keyboard resize setting still needs to be guaranteed.
+        provider_is_present = True
+    else:
+        provider_is_present = False
 
     if "</application>" not in content:
         raise RuntimeError(
@@ -48,6 +52,21 @@ def before_apk_assemble(toolchain):
             "to inject the FileProvider -- the manifest template may have changed."
         )
 
-    content = content.replace("</application>", PROVIDER_XML + "    </application>")
+    if not provider_is_present:
+        content = content.replace("</application>", PROVIDER_XML + "    </application>")
+
+    # Resize Kivy's view when the Android keyboard opens so ScrollView has a
+    # smaller viewport to scroll within, instead of the keyboard covering fields.
+    if 'android:windowSoftInputMode="adjustResize"' not in content:
+        activity = 'android:name="org.kivy.android.PythonActivity"'
+        if activity not in content:
+            raise RuntimeError(
+                "p4a_hooks.py: could not find the Kivy PythonActivity to configure "
+                "Android keyboard resizing."
+            )
+        content = content.replace(
+            activity, activity + ' android:windowSoftInputMode="adjustResize"', 1,
+        )
+
     with open(manifest_path, "w", encoding="utf-8") as f:
         f.write(content)

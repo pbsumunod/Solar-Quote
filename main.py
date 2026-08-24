@@ -22,6 +22,7 @@ class SolarClientFinderApp(MDApp):
         self.state = AppState()
         database.configure(self.user_data_dir)
         database.init_db()
+        show_onboarding = database.consume_first_launch()
 
         self.theme_cls.primary_palette = "Green"
 
@@ -38,7 +39,7 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(SimulationScreen())
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
-        sm.current = "onboarding"
+        sm.current = "onboarding" if show_onboarding else "client"
         return sm
 
 

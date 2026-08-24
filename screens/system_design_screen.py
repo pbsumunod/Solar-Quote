@@ -23,7 +23,7 @@ from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import INVERTER_KW_TIERS, required_inverter_kw, round_up_to_standard_size
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, section_label,
+    ACCENT, TEXT_DARK, about_button, keep_focused_field_visible, m3_field, nav_row, screen_header, section_card, section_label,
     tonal_button, warning_row, with_bg,
 )
 
@@ -115,6 +115,7 @@ class SystemDesignScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: Simulation", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

@@ -35,7 +35,7 @@ from logic.financial import (
 )
 from ui_style import (
     ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, m3_field, picker_field,
-    nav_row, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
+    keep_focused_field_visible, nav_row, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
@@ -165,6 +165,7 @@ class RoiScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: Report", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

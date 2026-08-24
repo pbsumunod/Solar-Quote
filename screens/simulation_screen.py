@@ -36,7 +36,7 @@ from logic.simulation import (
     run_steady_state_simulation,
 )
 from ui_style import (
-    HEADER_BG, TEXT_DARK, WHITE, about_button, framed_label, nav_row, picker_field,
+    HEADER_BG, TEXT_DARK, WHITE, about_button, framed_label, keep_focused_field_visible, nav_row, picker_field,
     screen_header, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
@@ -135,6 +135,7 @@ class SimulationScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: Savings & ROI", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         self.big_bg.add_widget(scroll)
         root.add_widget(self.big_bg)
         self.add_widget(root)

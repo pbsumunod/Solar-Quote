@@ -27,7 +27,7 @@ from logic.calculations import (
     round_up_to_standard_size,
 )
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
+    ACCENT, TEXT_DARK, about_button, keep_focused_field_visible, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_PEAK_SUN_HOURS = 4.5
@@ -88,6 +88,7 @@ class SolarScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: Battery Sizing", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

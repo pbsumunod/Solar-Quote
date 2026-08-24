@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 
@@ -46,10 +51,35 @@ def get_connection() -> sqlite3.Connection:
 
 def init_db() -> None:
     conn = get_connection()
-    conn.execute(SCHEMA)
+    conn.executescript(SCHEMA)
     _migrate_add_missing_columns(conn)
     conn.commit()
     conn.close()
+
+
+def consume_first_launch() -> bool:
+    """Return whether this is the first launch for the installed app.
+
+    The flag is stored alongside the app database in Kivy's ``user_data_dir``.
+    That directory is removed on uninstall, so a new installation naturally sees
+    onboarding again.  Recording it before the UI is shown also makes onboarding
+    a true first-launch screen if the app is closed before tapping Get Started.
+    """
+    conn = get_connection()
+    try:
+        seen = conn.execute(
+            "SELECT 1 FROM app_settings WHERE key = 'onboarding_seen'"
+        ).fetchone()
+        if seen is not None:
+            return False
+
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('onboarding_seen', '1')"
+        )
+        conn.commit()
+        return True
+    finally:
+        conn.close()
 
 
 def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:

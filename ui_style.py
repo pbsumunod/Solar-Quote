@@ -7,6 +7,7 @@ painted on every interactive element. See the "SolarQuote Client Screen" design
 mockup for the reference layout this module implements in Kivy.
 """
 
+from kivy.clock import Clock
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
@@ -366,6 +367,23 @@ def primary_button(text: str, on_release=None, **kwargs) -> MDFillRoundFlatButto
     return btn
 
 
+def keep_focused_field_visible(scroll, form) -> None:
+    """Scroll a form field above Android's soft keyboard when it receives focus."""
+    def _scroll_to_field(field) -> None:
+        # Wait for Android to resize the activity after it opens the keyboard.
+        Clock.schedule_once(
+            lambda _dt: scroll.scroll_to(field, padding=dp(24), animate=False), 0.15,
+        )
+
+    def _bind_text_fields(widget) -> None:
+        if isinstance(widget, MDTextField):
+            widget.bind(focus=lambda field, focused: _scroll_to_field(field) if focused else None)
+        for child in widget.children:
+            _bind_text_fields(child)
+
+    _bind_text_fields(form)
+
+
 def tonal_button(text: str, on_release=None, **kwargs) -> MDFillRoundFlatButton:
     """A secondary action worth noticing (SHOW CALCULATION, exports, toggles) --
     tonal fill so it doesn't compete with the screen's primary_button."""
@@ -432,13 +450,26 @@ def about_button(on_release) -> MDIconButton:
 def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
     """The bottom Back + Next pair for a wizard step -- Back is a fixed-width,
     low-emphasis outlined button (the top-left header arrow already covers this
-    action; this is a second, thumb-reachable copy of it), Next stays the
-    screen's primary, full-width-minus-Back call to action. Both are given the
-    same explicit height since outlined_button and primary_button default to
-    different heights (40dp/48dp) -- left alone, the pair would look uneven."""
+    action; this is a second, thumb-reachable copy of it). Both actions are
+    grouped at the right edge, where the primary Next action is easiest to
+    reach. They share an explicit height because outlined_button and
+    primary_button default to different heights."""
     row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+    row.add_widget(Widget())
     row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(96), height=dp(48)))
-    row.add_widget(primary_button(next_text, on_release=on_next, height=dp(48)))
+    row.add_widget(primary_button(
+        next_text, on_release=on_next, size_hint_x=None, width=dp(200), height=dp(48),
+    ))
+    return row
+
+
+def bottom_primary_action(text: str, on_release) -> MDBoxLayout:
+    """A single bottom-page primary action aligned with the wizard controls."""
+    row = MDBoxLayout(size_hint_y=None, height=dp(48))
+    row.add_widget(Widget())
+    row.add_widget(primary_button(
+        text, on_release=on_release, size_hint_x=None, width=dp(200), height=dp(48),
+    ))
     return row
 
 

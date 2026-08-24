@@ -34,7 +34,7 @@ from kivymd.uix.spinner import MDSpinner
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import (
-    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, header_actions, icon_button, m3_field, save_button,
+    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
     screen_header, section_card, section_label, tonal_button, with_bg,
 )
 from widgets.line_chart import LineChart
@@ -138,6 +138,7 @@ class ReportScreen(MDScreen):
         ))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

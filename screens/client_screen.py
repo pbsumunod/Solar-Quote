@@ -26,7 +26,7 @@ from db import database
 from logic.geo_data import COUNTRY_LATITUDES
 from logic.models import Project
 from ui_style import (
-    ACCENT, ON_SURFACE_VARIANT, about_button, m3_field, picker_field, primary_button,
+    ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, keep_focused_field_visible, m3_field, picker_field, primary_button,
     project_row, screen_header, section_card,
 )
 
@@ -114,9 +114,10 @@ class ClientScreen(MDScreen):
         electricity_card.add_widget(self.ratio_field)
         form.add_widget(electricity_card)
 
-        form.add_widget(primary_button("Next: Consumption", on_release=self._go_next))
+        form.add_widget(bottom_primary_action("Next: Consumption", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 
@@ -208,6 +209,8 @@ class ClientScreen(MDScreen):
         self._country = project.country
         self.country_field.set_value(project.country or "Select Country")
         self.current_project_id = project.id
+        if project.id is not None:
+            self.project_row_widget._value_label.text = f"{project.client_name} - {project.project_date}"
 
     def get_report_data(self) -> dict:
         project = self._collect_project()

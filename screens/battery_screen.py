@@ -28,7 +28,7 @@ from logic.calculations import (
     split_day_night_kwh,
 )
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
+    ACCENT, TEXT_DARK, about_button, keep_focused_field_visible, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
@@ -105,6 +105,7 @@ class BatteryScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: System Design", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

@@ -28,7 +28,7 @@ from logic.calculations import (
 )
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
-    about_button, framed_label, nav_row, screen_header, section_card, section_label,
+    about_button, framed_label, keep_focused_field_visible, nav_row, screen_header, section_card, section_label,
     stat_title_label, tonal_button,
 )
 from widgets.bar_chart import BarChart
@@ -155,6 +155,7 @@ class ConsumptionScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: Solar Sizing", self._go_next))
 
         scroll.add_widget(form)
+        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

@@ -78,13 +78,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .buildozer
-          # v2: bumped to bust the previous cache, which had fontTools already
+          # v3: bumped to bust the previous cache, which had fontTools already
           # pip-installed with a bad x86_64-compiled bezierTools.so baked in
           # (see FONTTOOLS_WITH_CYTHON above) -- restore-keys would otherwise
           # keep restoring that stale install and skip reinstalling it.
-          key: buildozer-v2-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
+          key: buildozer-v3-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
           restore-keys: |
-            buildozer-v2-${{ hashFiles('buildozer.spec') }}-
+            buildozer-v3-${{ hashFiles('buildozer.spec') }}-
 
       - name: Build APK
         run: yes | buildozer android debug
