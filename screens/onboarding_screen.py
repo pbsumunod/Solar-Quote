@@ -43,10 +43,13 @@ class OnboardingScreen(MDScreen):
         logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint_y=None, height=dp(204))
         logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(192), dp(192))))
         form.add_widget(logo_cell)
-        form.add_widget(MDLabel(
+        welcome = MDLabel(
             text="Plan every solar quote with confidence", bold=True, font_style="H4", halign="center",
-            theme_text_color="Custom", text_color=ON_SURFACE, size_hint_y=None, height=dp(46),
-        ))
+            theme_text_color="Custom", text_color=ON_SURFACE, size_hint_y=None,
+        )
+        welcome.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+        welcome.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1] + dp(4)))
+        form.add_widget(welcome)
         tagline = MDLabel(
             text="Solar sizing, financial modeling, and polished proposals - all in one guided workflow.",
             halign="center", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT, size_hint_y=None,

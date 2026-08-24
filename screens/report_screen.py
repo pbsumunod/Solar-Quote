@@ -133,10 +133,12 @@ class ReportScreen(MDScreen):
         form.add_widget(export_card)
 
         form.add_widget(section_label("information-outline", "Disclaimer"))
-        form.add_widget(MDLabel(
-            text=DISCLAIMER, theme_text_color="Custom", text_color=TEXT_DARK,
-            size_hint_y=None, height=dp(90),
-        ))
+        disclaimer_label = MDLabel(
+            text=DISCLAIMER, theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None,
+        )
+        disclaimer_label.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+        disclaimer_label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1] + dp(12)))
+        form.add_widget(disclaimer_label)
         form.add_widget(bottom_back_action(self._go_back))
 
         scroll.add_widget(form)
