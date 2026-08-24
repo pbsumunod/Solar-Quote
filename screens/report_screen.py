@@ -21,6 +21,7 @@ import shutil
 
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 from kivymd.app import MDApp
@@ -317,15 +318,17 @@ class ReportScreen(MDScreen):
         if self._dialog:
             self._dialog.dismiss()
         content = MDBoxLayout(
-            orientation="horizontal", spacing=dp(16), padding=dp(8),
-            size_hint_y=None, height=dp(48),
+            orientation="vertical", spacing=dp(10), padding=(dp(20), dp(16)),
+            size_hint=(None, None), size=(dp(240), dp(124)),
         )
-        content.add_widget(MDSpinner(
-            size_hint=(None, None), size=(dp(32), dp(32)), active=True, color=ACCENT,
+        spinner_cell = AnchorLayout(size_hint_y=None, height=dp(44))
+        spinner_cell.add_widget(MDSpinner(
+            size_hint=(None, None), size=(dp(36), dp(36)), active=True, color=ACCENT,
         ))
+        content.add_widget(spinner_cell)
         content.add_widget(MDLabel(
-            text=text, halign="center", valign="middle", text_size=(dp(220), None),
-            theme_text_color="Custom", text_color=TEXT_DARK,
+            text=text, halign="center", valign="middle", text_size=(dp(200), dp(32)),
+            theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(32),
         ))
         self._dialog = MDDialog(title="", type="custom", content_cls=content, auto_dismiss=False)
         self._dialog.open()
