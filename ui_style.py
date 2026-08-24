@@ -435,6 +435,14 @@ def save_button(on_release=None, text: str = "Save", **kwargs) -> MDFillRoundFla
     return btn
 
 
+def save_current_project() -> bool:
+    """Save the active quote from any wizard step through the shared Client screen."""
+    from kivymd.app import MDApp
+
+    app = MDApp.get_running_app()
+    return app.root.get_screen("client").save_full_quote()
+
+
 def icon_button(icon: str, on_release=None, color=ON_SURFACE_VARIANT, **kwargs) -> MDIconButton:
     btn = MDIconButton(icon=icon, theme_text_color="Custom", text_color=color, **kwargs)
     if on_release:
@@ -454,21 +462,21 @@ def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
     grouped at the right edge, where the primary Next action is easiest to
     reach. They share an explicit height because outlined_button and
     primary_button default to different heights."""
-    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(48))
+    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(56))
     row.add_widget(Widget())
-    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(96), height=dp(48)))
+    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(96), height=dp(56)))
     row.add_widget(primary_button(
-        next_text, on_release=on_next, size_hint_x=None, width=dp(200), height=dp(48),
+        next_text, on_release=on_next, size_hint_x=None, width=dp(200), height=dp(56),
     ))
     return row
 
 
 def bottom_primary_action(text: str, on_release) -> MDBoxLayout:
     """A single bottom-page primary action aligned with the wizard controls."""
-    row = MDBoxLayout(size_hint_y=None, height=dp(48))
+    row = MDBoxLayout(size_hint_y=None, height=dp(56))
     row.add_widget(Widget())
     row.add_widget(primary_button(
-        text, on_release=on_release, size_hint_x=None, width=dp(200), height=dp(48),
+        text, on_release=on_release, size_hint_x=None, width=dp(210), height=dp(56),
     ))
     return row
 

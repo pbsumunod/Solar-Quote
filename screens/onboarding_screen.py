@@ -36,19 +36,19 @@ class OnboardingScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(20), padding=(dp(24), dp(40), dp(24), dp(24)),
+        form = MDBoxLayout(orientation="vertical", spacing=dp(20), padding=(dp(24), dp(28), dp(24), dp(28)),
                             size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        logo_cell = AnchorLayout(anchor_x="center", size_hint_y=None, height=dp(72))
-        logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(72), dp(72))))
+        logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint_y=None, height=dp(140))
+        logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(128), dp(128))))
         form.add_widget(logo_cell)
         form.add_widget(MDLabel(
-            text="Welcome to SolarQuote", bold=True, font_style="H5", halign="center",
-            theme_text_color="Custom", text_color=ON_SURFACE, size_hint_y=None, height=dp(36),
+            text="Plan every solar quote with confidence", bold=True, font_style="H4", halign="center",
+            theme_text_color="Custom", text_color=ON_SURFACE, size_hint_y=None, height=dp(46),
         ))
         tagline = MDLabel(
-            text="Solar system sizing, ROI simulation, and client-ready proposals -- for installers.",
+            text="Solar sizing, financial modeling, and polished proposals - all in one guided workflow.",
             halign="center", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT, size_hint_y=None,
         )
         tagline.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
@@ -65,9 +65,9 @@ class OnboardingScreen(MDScreen):
             card.add_widget(desc_label)
             form.add_widget(card)
 
-        cta_cell = AnchorLayout(anchor_x="center", size_hint_y=None, height=dp(48))
+        cta_cell = AnchorLayout(anchor_x="center", size_hint_y=None, height=dp(56))
         cta_cell.add_widget(primary_button(
-            "Get Started", on_release=self._get_started, size_hint_x=None, width=dp(220),
+            "Start a Solar Quote", on_release=self._get_started, size_hint_x=None, width=dp(240), height=dp(56),
         ))
         form.add_widget(cta_cell)
 

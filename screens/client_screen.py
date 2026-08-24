@@ -26,7 +26,7 @@ from db import database
 from logic.geo_data import COUNTRY_LATITUDES
 from logic.models import Project
 from ui_style import (
-    ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, keep_focused_field_visible, m3_field, picker_field, primary_button,
+    ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, header_actions, keep_focused_field_visible, m3_field, picker_field, primary_button, save_button, save_current_project,
     project_row, screen_header, section_card,
 )
 
@@ -60,7 +60,7 @@ class ClientScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Client Information", step=1, show_logo=True,
-            right_widget=about_button(self._go_about),
+            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

@@ -80,8 +80,8 @@ class ReportScreen(MDScreen):
         root.add_widget(screen_header(
             "Report", step=8, on_back=self._go_back,
             right_widget=header_actions(
-                about_button(self._go_about),
                 icon_button("home-outline", on_release=self._go_home, color=ACCENT),
+                about_button(self._go_about),
                 save_button(on_release=self._save_project),
             ),
         ))
@@ -319,7 +319,10 @@ class ReportScreen(MDScreen):
         content.add_widget(MDSpinner(
             size_hint=(None, None), size=(dp(32), dp(32)), active=True, color=ACCENT,
         ))
-        content.add_widget(MDLabel(text=text, theme_text_color="Custom", text_color=TEXT_DARK))
+        content.add_widget(MDLabel(
+            text=text, halign="center", valign="middle", text_size=(dp(220), None),
+            theme_text_color="Custom", text_color=TEXT_DARK,
+        ))
         self._dialog = MDDialog(title="", type="custom", content_cls=content, auto_dismiss=False)
         self._dialog.open()
 

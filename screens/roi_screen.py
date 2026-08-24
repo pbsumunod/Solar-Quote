@@ -34,8 +34,8 @@ from logic.financial import (
     total_electricity_savings,
 )
 from ui_style import (
-    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, m3_field, picker_field,
-    keep_focused_field_visible, nav_row, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
+    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, header_actions, m3_field, picker_field,
+    keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
 from widgets.line_chart import LineChart
@@ -69,7 +69,8 @@ class RoiScreen(MDScreen):
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
-            "Savings & ROI", step=7, on_back=self._go_back, right_widget=about_button(self._go_about),
+            "Savings & ROI", step=7, on_back=self._go_back,
+            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

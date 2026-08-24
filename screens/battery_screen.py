@@ -28,7 +28,7 @@ from logic.calculations import (
     split_day_night_kwh,
 )
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, keep_focused_field_visible, m3_field, nav_row, screen_header, section_card, tonal_button, with_bg,
+    ACCENT, TEXT_DARK, about_button, header_actions, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
@@ -49,7 +49,8 @@ class BatteryScreen(MDScreen):
     def _build_ui(self) -> None:
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
-            "Battery Sizing", step=4, on_back=self._go_back, right_widget=about_button(self._go_about),
+            "Battery Sizing", step=4, on_back=self._go_back,
+            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

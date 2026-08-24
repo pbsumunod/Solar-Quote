@@ -191,38 +191,52 @@ def generate_csv(path: str, data: dict) -> None:
 
 # --- PDF export --------------------------------------------------------------
 
-def _install_fonttools_bezier_compat() -> None:
+def _install_fonttools_compat() -> None:
     """Keep fpdf2's core-font exports independent of fontTools native modules.
 
-    fpdf2 imports ``fontTools.ttLib`` even though this report uses only its built-in
-    Helvetica font.  Some APK builds contain a host-architecture bezierTools
-    extension but omit its .py fallback, which makes that import fail before PDF
-    generation begins.  Supplying the import-time API here bypasses the optional
-    extension.  These functions are not used by core-font reports; custom TTF font
-    processing deliberately raises a clear error instead of loading an incompatible
-    native library.
+    fpdf2 imports fontTools even though this report uses only its built-in Helvetica
+    font. Some APK builds package host-architecture extensions (for example
+    ``bezierTools`` and ``varLib.iup``), so any real fontTools import can fail before
+    PDF generation begins. Supplying only fpdf2's import-time API bypasses all of
+    those optional extensions. Custom TTF and SVG-font processing deliberately raises
+    a clear error instead of loading an incompatible native library.
     """
-    module_name = "fontTools.misc.bezierTools"
-    module = ModuleType(module_name)
-
     def unsupported(*_args, **_kwargs):
         raise RuntimeError(
             "Custom TrueType fonts are not supported in this Android build; "
             "use the report's built-in Helvetica font."
         )
 
-    for name in (
-        "approximateCubicArcLengthC", "approximateQuadraticArcLengthC",
-        "calcCubicArcLengthC", "calcCubicBounds", "calcQuadraticArcLengthC",
-        "calcQuadraticBounds", "solveCubic", "solveQuadratic", "splitCubicAtTC",
-    ):
-        setattr(module, name, unsupported)
-    sys.modules[module_name] = module
+    font_tools = ModuleType("fontTools")
+    font_tools.__path__ = []
+    tt_lib = ModuleType("fontTools.ttLib")
+    tt_lib.TTFont = unsupported
+    subset = ModuleType("fontTools.subset")
+    svg_lib = ModuleType("fontTools.svgLib")
+    svg_lib.__path__ = []
+    svg_path = ModuleType("fontTools.svgLib.path")
+    svg_path.parse_path = unsupported
+    pens = ModuleType("fontTools.pens")
+    pens.__path__ = []
+    base_pen = ModuleType("fontTools.pens.basePen")
+
+    class BasePen:
+        pass
+
+    base_pen.BasePen = BasePen
+    font_tools.ttLib = tt_lib
+    font_tools.subset = subset
+    font_tools.svgLib = svg_lib
+    font_tools.pens = pens
+    svg_lib.path = svg_path
+    pens.basePen = base_pen
+    for module in (font_tools, tt_lib, subset, svg_lib, svg_path, pens, base_pen):
+        sys.modules[module.__name__] = module
 
 def _pdf_heading(pdf, text: str) -> None:
     pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(*PRIMARY_RGB)
-    pdf.cell(0, 10, text, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 10, text, align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.set_draw_color(*PRIMARY_RGB)
     pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
     pdf.ln(4)
@@ -237,10 +251,10 @@ def _pdf_kv_table(pdf, pairs: list[tuple[str, str]]) -> None:
         else:
             fill = False
         pdf.set_text_color(*MUTED_RGB)
-        pdf.cell(70, 7, str(k), fill=fill)
+        pdf.cell(70, 7, str(k), align="L", fill=fill)
         pdf.set_text_color(*TEXT_RGB)
         pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 7, str(v), new_x="LMARGIN", new_y="NEXT", fill=fill)
+        pdf.cell(0, 7, str(v), align="L", new_x="LMARGIN", new_y="NEXT", fill=fill)
         pdf.set_font("Helvetica", "", 10)
     pdf.ln(4)
 
@@ -256,7 +270,7 @@ def generate_pdf(
     _render_scenario_charts) -- for each scenario present in both this dict and
     data["simulation"]["scenario_results"], adds a page with that scenario's
     hourly chart and a summary of its totals, in SCENARIO_ORDER."""
-    _install_fonttools_bezier_compat()
+    _install_fonttools_compat()
     from fpdf import FPDF
 
     client = data["client"]
@@ -274,14 +288,14 @@ def generate_pdf(
     title = data.get("company_name") or "Solar Proposal"
     pdf.set_font("Helvetica", "B", 22)
     pdf.set_text_color(*PRIMARY_RGB)
-    pdf.cell(0, 14, title, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 14, title, align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
     pdf.set_text_color(*TEXT_RGB)
     pdf.cell(0, 8, f"Solar System Proposal for {client['client_name'] or 'Prospective Client'}",
-             new_x="LMARGIN", new_y="NEXT")
+             align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 10)
     pdf.set_text_color(*MUTED_RGB)
-    pdf.cell(0, 6, client["project_date"], new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, client["project_date"], align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)
 
     _pdf_heading(pdf, "Client Profile")
@@ -367,7 +381,7 @@ def generate_pdf(
     pdf.set_font("Helvetica", "", 9)
     heading_style = FontFace(emphasis="BOLD", color=(255, 255, 255), fill_color=PRIMARY_RGB)
     band_style = FontFace(fill_color=BAND_RGB)
-    with pdf.table(col_widths=col_widths, text_align="RIGHT", headings_style=heading_style,
+    with pdf.table(col_widths=col_widths, text_align="LEFT", headings_style=heading_style,
                    line_height=6.5, borders_layout="HORIZONTAL_LINES") as table:
         row = table.row()
         for h in headers:
@@ -412,9 +426,12 @@ def _add_textbox(slide, left, top, width, height, lines):
     box = slide.shapes.add_textbox(left, top, width, height)
     tf = box.text_frame
     tf.word_wrap = True
+    tf.margin_left = Pt(4)
+    tf.margin_right = Pt(4)
     for i, (text, size, hex_color, bold) in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         p.alignment = PP_ALIGN.LEFT
+        p.space_after = Pt(6)
         run = p.add_run()
         run.text = text
         run.font.size = Pt(size)
@@ -425,6 +442,7 @@ def _add_textbox(slide, left, top, width, height, lines):
 def _add_card(slide, left, top, width, height, title, value, accent_hex="2B6CB0"):
     from pptx.dml.color import RGBColor
     from pptx.enum.shapes import MSO_SHAPE
+    from pptx.enum.text import PP_ALIGN
     from pptx.util import Pt
 
     card = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, left, top, width, height)
@@ -435,13 +453,17 @@ def _add_card(slide, left, top, width, height, title, value, accent_hex="2B6CB0"
     tf = card.text_frame
     tf.word_wrap = True
     tf.margin_left = Pt(14)
+    tf.margin_right = Pt(14)
     tf.margin_top = Pt(10)
     p0 = tf.paragraphs[0]
+    p0.alignment = PP_ALIGN.LEFT
     r0 = p0.add_run()
     r0.text = title
     r0.font.size = Pt(13)
     r0.font.color.rgb = RGBColor.from_string("6B7684")
     p1 = tf.add_paragraph()
+    p1.alignment = PP_ALIGN.LEFT
+    p1.space_before = Pt(4)
     r1 = p1.add_run()
     r1.text = value
     r1.font.size = Pt(22)
