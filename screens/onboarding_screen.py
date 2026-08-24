@@ -5,14 +5,13 @@ wizard starts, so a first-time installer knows what the app does and how the
 
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.image import Image
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
-from ui_style import LOGO_PATH, ON_SURFACE, ON_SURFACE_VARIANT, primary_button, section_card
+from ui_style import ON_SURFACE, ON_SURFACE_VARIANT, primary_button, section_card
 
 FEATURES = [
     ("auto-fix", "Auto-Sized Systems",
@@ -40,9 +39,6 @@ class OnboardingScreen(MDScreen):
                             size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint_y=None, height=dp(204))
-        logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(192), dp(192))))
-        form.add_widget(logo_cell)
         welcome = MDLabel(
             text="Plan every solar quote with confidence", bold=True, font_style="H4", halign="center",
             theme_text_color="Custom", text_color=ON_SURFACE, size_hint_y=None,
