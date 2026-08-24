@@ -36,12 +36,12 @@ class OnboardingScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
 
         scroll = ScrollView()
-        form = MDBoxLayout(orientation="vertical", spacing=dp(20), padding=(dp(24), dp(28), dp(24), dp(28)),
+        form = MDBoxLayout(orientation="vertical", spacing=dp(10), padding=(dp(24), dp(20), dp(24), dp(28)),
                             size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint_y=None, height=dp(176))
-        logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(160), dp(160))))
+        logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint_y=None, height=dp(204))
+        logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(192), dp(192))))
         form.add_widget(logo_cell)
         form.add_widget(MDLabel(
             text="Plan every solar quote with confidence", bold=True, font_style="H4", halign="center",

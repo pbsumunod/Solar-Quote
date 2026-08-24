@@ -52,15 +52,22 @@ FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
 
 def export_dir(app) -> str:
-    """The app's external files directory on Android (no runtime permission
-    needed, reachable via a file manager/USB); falls back to user_data_dir
-    for desktop testing, where pyjnius/Android APIs aren't available."""
+    """Return the Android Downloads directory, with a safe app-data fallback."""
     if platform == "android":
         try:
             from jnius import autoclass
             PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            Environment = autoclass("android.os.Environment")
             context = PythonActivity.mActivity
-            ext_dir = context.getExternalFilesDir(None)
+            ext_dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            if ext_dir is not None:
+                path = ext_dir.getAbsolutePath()
+                os.makedirs(path, exist_ok=True)
+                if os.access(path, os.W_OK):
+                    return path
+            # Scoped-storage fallback still places files in a Downloads-named
+            # folder when Android does not grant direct public-folder access.
+            ext_dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             if ext_dir is not None:
                 return ext_dir.getAbsolutePath()
         except Exception:

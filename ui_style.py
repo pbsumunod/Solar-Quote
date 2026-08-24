@@ -417,22 +417,15 @@ def header_actions(*widgets) -> MDBoxLayout:
     row = MDBoxLayout(orientation="horizontal", spacing=dp(4), size_hint=(None, 1))
     row.bind(minimum_width=row.setter("width"))
     for w in widgets:
-        row.add_widget(_centered(w, width=w.width or dp(90)))
+        # Header actions are icon buttons. Fixed compact cells prevent a hidden
+        # Home icon or the phantom width left behind by an empty Save text label.
+        row.add_widget(_centered(w, width=dp(44)))
     return row
 
 
-def save_button(on_release=None, text: str = "", **kwargs) -> MDFillRoundFlatIconButton:
-    """An icon-only save action for a screen's top bar."""
-    kwargs.setdefault("size_hint", (None, None))
-    kwargs.setdefault("height", dp(36))
-    btn = MDFillRoundFlatIconButton(
-        icon="content-save", text=text,
-        md_bg_color=ACCENT_LIGHT, text_color=ON_PRIMARY_CONTAINER, icon_color=ON_PRIMARY_CONTAINER,
-        **kwargs,
-    )
-    if on_release:
-        btn.bind(on_release=lambda *_a: on_release())
-    return btn
+def save_button(on_release=None, **kwargs) -> MDIconButton:
+    """An icon-only Save action with no unused text/pill space."""
+    return icon_button("content-save", on_release=on_release, color=ACCENT, **kwargs)
 
 
 def save_current_project() -> bool:
@@ -440,7 +433,17 @@ def save_current_project() -> bool:
     from kivymd.app import MDApp
 
     app = MDApp.get_running_app()
-    return app.root.get_screen("client").save_full_quote()
+    saved = app.root.get_screen("client").save_full_quote()
+    if saved:
+        from kivymd.uix.button import MDFlatButton
+        from kivymd.uix.dialog import MDDialog
+
+        dialog = MDDialog(title="Saved", text="This solar quote has been saved.")
+        dialog.buttons = [MDFlatButton(
+            text="OK", text_color=ACCENT, on_release=lambda *_args: dialog.dismiss(),
+        )]
+        dialog.open()
+    return saved
 
 
 def icon_button(icon: str, on_release=None, color=ON_SURFACE_VARIANT, **kwargs) -> MDIconButton:
@@ -462,11 +465,11 @@ def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
     grouped at the right edge, where the primary Next action is easiest to
     reach. They share an explicit height because outlined_button and
     primary_button default to different heights."""
-    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(64))
+    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(68))
     row.add_widget(Widget())
-    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(158), height=dp(64)))
+    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(158), height=dp(68)))
     row.add_widget(primary_button(
-        next_text, on_release=on_next, size_hint_x=None, width=dp(158), height=dp(64),
+        next_text, on_release=on_next, size_hint_x=None, width=dp(158), height=dp(68),
     ))
     return row
 
