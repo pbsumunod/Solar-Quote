@@ -1,4 +1,6 @@
 from kivy.clock import Clock
+from kivy.metrics import dp
+from kivy.uix.anchorlayout import AnchorLayout
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.dialog import MDDialog
@@ -33,10 +35,18 @@ class LoadingScreenManager(MDScreenManager):
             self._dismiss_event.cancel()
         if self._loading_dialog is None:
             content = MDBoxLayout(
-                orientation="horizontal", spacing=16, padding=8, size_hint_y=None, height=48,
+                orientation="vertical", spacing=dp(10), padding=(dp(20), dp(16)),
+                size_hint=(None, None), size=(dp(200), dp(116)),
             )
-            content.add_widget(MDSpinner(size_hint=(None, None), size=(32, 32), active=True))
-            content.add_widget(MDLabel(text="Loading...", halign="center"))
+            spinner_cell = AnchorLayout(size_hint_y=None, height=dp(44))
+            spinner_cell.add_widget(MDSpinner(
+                size_hint=(None, None), size=(dp(36), dp(36)), active=True,
+            ))
+            content.add_widget(spinner_cell)
+            content.add_widget(MDLabel(
+                text="Loading...", halign="center", valign="middle",
+                text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
+            ))
             self._loading_dialog = MDDialog(
                 title="", type="custom", content_cls=content, auto_dismiss=False,
             )
