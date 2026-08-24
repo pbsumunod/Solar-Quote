@@ -438,10 +438,13 @@ def save_current_project() -> bool:
         from kivymd.uix.button import MDFlatButton
         from kivymd.uix.dialog import MDDialog
 
-        dialog = MDDialog(title="Saved", text="This solar quote has been saved.")
-        dialog.buttons = [MDFlatButton(
-            text="OK", text_color=ACCENT, on_release=lambda *_args: dialog.dismiss(),
-        )]
+        dialog = MDDialog(
+            title="Saved",
+            text="This solar quote has been saved.",
+            buttons=[MDFlatButton(
+                text="OK", text_color=ACCENT, on_release=lambda *_args: dialog.dismiss(),
+            )],
+        )
         dialog.open()
     return saved
 
