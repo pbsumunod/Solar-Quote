@@ -23,7 +23,7 @@ from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import INVERTER_KW_TIERS, required_inverter_kw, round_up_to_standard_size
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, header_actions, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
+    ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
     tonal_button, warning_row, with_bg,
 )
 
@@ -50,7 +50,7 @@ class SystemDesignScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "System Design", step=5, on_back=self._go_back,
-            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
+            right_widget=header_actions(about_button(self._go_about), icon_button("home-outline", on_release=go_home, color=ACCENT), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

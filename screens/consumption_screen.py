@@ -28,7 +28,7 @@ from logic.calculations import (
 )
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
-    about_button, framed_label, header_actions, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
+    about_button, framed_label, go_home, header_actions, icon_button, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
     stat_title_label, tonal_button,
 )
 from widgets.bar_chart import BarChart
@@ -105,7 +105,7 @@ class ConsumptionScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Consumption", step=2, on_back=self._go_back,
-            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
+            right_widget=header_actions(about_button(self._go_about), icon_button("home-outline", on_release=go_home, color=ACCENT), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

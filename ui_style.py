@@ -446,6 +446,13 @@ def save_current_project() -> bool:
     return saved
 
 
+def go_home() -> None:
+    """Return from any wizard step to Client Information."""
+    from kivymd.app import MDApp
+
+    MDApp.get_running_app().root.current = "client"
+
+
 def icon_button(icon: str, on_release=None, color=ON_SURFACE_VARIANT, **kwargs) -> MDIconButton:
     btn = MDIconButton(icon=icon, theme_text_color="Custom", text_color=color, **kwargs)
     if on_release:

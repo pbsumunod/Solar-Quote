@@ -27,7 +27,7 @@ from logic.calculations import (
     round_up_to_standard_size,
 )
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, header_actions, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
+    ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_PEAK_SUN_HOURS = 4.5
@@ -48,7 +48,7 @@ class SolarScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Solar Sizing", step=3, on_back=self._go_back,
-            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
+            right_widget=header_actions(about_button(self._go_about), icon_button("home-outline", on_release=go_home, color=ACCENT), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()

@@ -36,7 +36,7 @@ from logic.simulation import (
     run_steady_state_simulation,
 )
 from ui_style import (
-    HEADER_BG, TEXT_DARK, WHITE, about_button, framed_label, header_actions, keep_focused_field_visible, nav_row, picker_field,
+    HEADER_BG, TEXT_DARK, WHITE, about_button, framed_label, go_home, header_actions, icon_button, keep_focused_field_visible, nav_row, picker_field,
     save_button, save_current_project, screen_header, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
@@ -78,7 +78,7 @@ class SimulationScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Simulation", step=6, on_back=self._go_back,
-            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
+            right_widget=header_actions(about_button(self._go_about), icon_button("home-outline", on_release=go_home), save_button(on_release=save_current_project)),
         ))
 
         self.big_bg = WeatherBackground(self.active_scenario)
