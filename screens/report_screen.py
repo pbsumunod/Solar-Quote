@@ -34,7 +34,7 @@ from kivymd.uix.spinner import MDSpinner
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import (
-    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
+    ACCENT, BUILD_LABEL, TEXT_DARK, about_button, bottom_back_action, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
     screen_header, section_card, section_label, tonal_button, with_bg,
 )
 from widgets.line_chart import LineChart
@@ -80,8 +80,8 @@ class ReportScreen(MDScreen):
         root.add_widget(screen_header(
             "Report", step=8, on_back=self._go_back,
             right_widget=header_actions(
-                icon_button("home-outline", on_release=self._go_home, color=ACCENT),
                 about_button(self._go_about),
+                icon_button("home-outline", on_release=self._go_home, color=ACCENT),
                 save_button(on_release=self._save_project),
             ),
         ))
@@ -136,6 +136,7 @@ class ReportScreen(MDScreen):
             text=f"Build {BUILD_LABEL}", font_style="Caption", halign="center",
             theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(20),
         ))
+        form.add_widget(bottom_back_action(self._go_back))
 
         scroll.add_widget(form)
         keep_focused_field_visible(scroll, form)

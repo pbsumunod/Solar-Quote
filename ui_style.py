@@ -421,8 +421,8 @@ def header_actions(*widgets) -> MDBoxLayout:
     return row
 
 
-def save_button(on_release=None, text: str = "Save", **kwargs) -> MDFillRoundFlatIconButton:
-    """A compact tonal pill button for a screen's top-bar Save action."""
+def save_button(on_release=None, text: str = "", **kwargs) -> MDFillRoundFlatIconButton:
+    """An icon-only save action for a screen's top bar."""
     kwargs.setdefault("size_hint", (None, None))
     kwargs.setdefault("height", dp(36))
     btn = MDFillRoundFlatIconButton(
@@ -462,11 +462,11 @@ def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
     grouped at the right edge, where the primary Next action is easiest to
     reach. They share an explicit height because outlined_button and
     primary_button default to different heights."""
-    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(56))
+    row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(64))
     row.add_widget(Widget())
-    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(96), height=dp(56)))
+    row.add_widget(outlined_button("Back", on_release=on_back, size_hint_x=None, width=dp(158), height=dp(64)))
     row.add_widget(primary_button(
-        next_text, on_release=on_next, size_hint_x=None, width=dp(200), height=dp(56),
+        next_text, on_release=on_next, size_hint_x=None, width=dp(158), height=dp(64),
     ))
     return row
 
@@ -477,6 +477,16 @@ def bottom_primary_action(text: str, on_release) -> MDBoxLayout:
     row.add_widget(Widget())
     row.add_widget(primary_button(
         text, on_release=on_release, size_hint_x=None, width=dp(210), height=dp(56),
+    ))
+    return row
+
+
+def bottom_back_action(on_back) -> MDBoxLayout:
+    """A bottom-page Back button matching the wizard action sizing."""
+    row = MDBoxLayout(size_hint_y=None, height=dp(64))
+    row.add_widget(Widget())
+    row.add_widget(outlined_button(
+        "Back", on_release=on_back, size_hint_x=None, width=dp(158), height=dp(64),
     ))
     return row
 
