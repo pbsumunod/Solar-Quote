@@ -2,9 +2,6 @@ from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivymd.app import MDApp
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.dialog import MDDialog
-from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.spinner import MDSpinner
@@ -25,39 +22,28 @@ from screens.system_design_screen import SystemDesignScreen
 
 
 class LoadingScreenManager(MDScreenManager):
-    """Briefly acknowledge every in-app navigation with a consistent spinner."""
+    """Briefly acknowledge every in-app navigation with a centered spinner."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self._loading_dialog = None
+        self._spinner_overlay = None
         self._dismiss_event = None
 
     def show_navigation_loading(self, *_args) -> None:
         if self._dismiss_event:
             self._dismiss_event.cancel()
-        if self._loading_dialog is None:
-            content = MDBoxLayout(
-                orientation="vertical", spacing=dp(10), padding=(dp(20), dp(16)),
-                size_hint=(None, None), size=(dp(200), dp(116)),
-            )
-            content.add_widget(MDSpinner(
-                size_hint=(None, None), size=(dp(36), dp(36)), active=True,
-            ))
-            content.add_widget(MDLabel(
-                text="Loading...", halign="center", valign="middle",
-                text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
-            ))
-            dialog_content = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(200), dp(116)))
-            dialog_content.add_widget(content)
-            self._loading_dialog = MDDialog(
-                title="", type="custom", content_cls=dialog_content, auto_dismiss=False,
-            )
-        if not self._loading_dialog.parent:
-            Clock.schedule_once(lambda _dt: self._loading_dialog.open(), 0)
+        if self._spinner_overlay and self._spinner_overlay.parent:
+            self._spinner_overlay.parent.remove_widget(self._spinner_overlay)
+        self._spinner_overlay = AnchorLayout(anchor_x='center', anchor_y='center')
+        self._spinner_overlay.add_widget(
+            MDSpinner(size_hint=(None, None), size=(dp(48), dp(48)), active=True)
+        )
+        self.current_screen.add_widget(self._spinner_overlay)
         self._dismiss_event = Clock.schedule_once(self._dismiss_loading, 0.35)
 
     def _dismiss_loading(self, _dt) -> None:
-        if self._loading_dialog and self._loading_dialog.parent:
-            self._loading_dialog.dismiss()
+        if self._spinner_overlay and self._spinner_overlay.parent:
+            self._spinner_overlay.parent.remove_widget(self._spinner_overlay)
+        self._spinner_overlay = None
 
 
 class StartupLoadingScreen(MDScreen):
@@ -65,16 +51,8 @@ class StartupLoadingScreen(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.name = "startup_loading"
-        content = MDBoxLayout(orientation="vertical", spacing=dp(14), size_hint=(None, None), size=(dp(220), dp(112)))
-        spinner_cell = AnchorLayout(anchor_x='center', anchor_y='center', size_hint_y=None, height=dp(52))
-        spinner_cell.add_widget(MDSpinner(size_hint=(None, None), size=(dp(44), dp(44)), active=True))
-        content.add_widget(spinner_cell)
-        content.add_widget(MDLabel(
-            text="Preparing SolarQuote...", halign="center", valign="middle",
-            text_size=(dp(220), dp(30)), size_hint_y=None, height=dp(30),
-        ))
-        center = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(220), dp(112)), pos_hint={'center_x': .5, 'center_y': .5})
-        center.add_widget(content)
+        center = AnchorLayout(anchor_x='center', anchor_y='center')
+        center.add_widget(MDSpinner(size_hint=(None, None), size=(dp(48), dp(48)), active=True))
         self.add_widget(center)
 
 
