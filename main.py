@@ -47,10 +47,7 @@ class LoadingScreenManager(MDScreenManager):
                 text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
             ))
             self._loading_dialog = MDDialog(
-                title="", type="custom",
-                content=content,
-                auto_dismiss=False,
-                buttons=[],
+                title="", type="custom", content_cls=content, auto_dismiss=False,
             )
         if not self._loading_dialog.parent:
             Clock.schedule_once(lambda _dt: self._loading_dialog.open(), 0)
@@ -67,12 +64,16 @@ class StartupLoadingScreen(MDScreen):
         super().__init__(**kwargs)
         self.name = "startup_loading"
         content = MDBoxLayout(orientation="vertical", spacing=dp(14), size_hint=(None, None), size=(dp(220), dp(112)))
-        content.add_widget(MDSpinner(size_hint=(None, None), size=(dp(44), dp(44)), active=True))
+        spinner_cell = AnchorLayout(size_hint_y=None, height=dp(52))
+        spinner_cell.add_widget(MDSpinner(size_hint=(None, None), size=(dp(44), dp(44)), active=True))
+        content.add_widget(spinner_cell)
         content.add_widget(MDLabel(
             text="Preparing SolarQuote...", halign="center", valign="middle",
             text_size=(dp(220), dp(30)), size_hint_y=None, height=dp(30),
         ))
-        self.add_widget(content)
+        center = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(220), dp(112)), pos_hint={'center_x': .5, 'center_y': .5})
+        center.add_widget(content)
+        self.add_widget(center)
 
 
 class SolarClientFinderApp(MDApp):
