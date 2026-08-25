@@ -48,7 +48,7 @@ class LoadingScreenManager(MDScreenManager):
                 text="Loading...", halign="center", valign="middle",
                 text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
             ))
-            centered_content = AnchorLayout(size_hint=(None, None), size=(dp(200), dp(116)))
+            centered_content = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(200), dp(116)))
             centered_content.add_widget(content)
             self._loading_dialog = MDDialog(
                 title="", type="custom", content_cls=centered_content, auto_dismiss=False,
@@ -75,7 +75,7 @@ class StartupLoadingScreen(MDScreen):
             text="Preparing SolarQuote...", halign="center", valign="middle",
             text_size=(dp(220), dp(30)), size_hint_y=None, height=dp(30),
         ))
-        center = AnchorLayout(size_hint=(None, None), size=(dp(220), dp(112)))
+        center = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(220), dp(112)), pos_hint={'center_x': .5, 'center_y': .5})
         center.add_widget(content)
         self.add_widget(center)
 
