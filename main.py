@@ -46,8 +46,10 @@ class LoadingScreenManager(MDScreenManager):
                 text="Loading...", halign="center", valign="middle",
                 text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
             ))
+            dialog_content = AnchorLayout(anchor_x='center', anchor_y='center', size_hint=(None, None), size=(dp(200), dp(116)))
+            dialog_content.add_widget(content)
             self._loading_dialog = MDDialog(
-                title="", type="custom", content_cls=content, auto_dismiss=False,
+                title="", type="custom", content_cls=dialog_content, auto_dismiss=False,
             )
         if not self._loading_dialog.parent:
             Clock.schedule_once(lambda _dt: self._loading_dialog.open(), 0)
@@ -64,7 +66,7 @@ class StartupLoadingScreen(MDScreen):
         super().__init__(**kwargs)
         self.name = "startup_loading"
         content = MDBoxLayout(orientation="vertical", spacing=dp(14), size_hint=(None, None), size=(dp(220), dp(112)))
-        spinner_cell = AnchorLayout(size_hint_y=None, height=dp(52))
+        spinner_cell = AnchorLayout(anchor_x='center', anchor_y='center', size_hint_y=None, height=dp(52))
         spinner_cell.add_widget(MDSpinner(size_hint=(None, None), size=(dp(44), dp(44)), active=True))
         content.add_widget(spinner_cell)
         content.add_widget(MDLabel(
