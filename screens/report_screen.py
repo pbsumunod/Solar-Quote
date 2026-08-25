@@ -395,12 +395,14 @@ class ReportScreen(MDScreen):
             self._dialog.dismiss()
         content = MDBoxLayout(orientation="vertical", spacing=dp(8), padding=dp(16), size_hint_y=None)
         content.add_widget(MDLabel(
-            text=f"Saved to:\n{path}", halign="center", valign="middle",
+            text=f"Saved to:\n{path}", halign="left",
             size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
         ))
-        btn_grid = MDGridLayout(cols=2, spacing=dp(8), padding=dp(8), size_hint_y=None, height=dp(100))
+        btn_grid = MDGridLayout(cols=2, spacing=dp(8), padding=dp(8), size_hint_y=None)
         for btn in buttons:
+            btn.size_hint_x = 1
             btn_grid.add_widget(btn)
+        btn_grid.bind(minimum_height=btn_grid.setter("height"))
         content.add_widget(btn_grid)
         content.bind(minimum_height=content.setter("height"))
         self._dialog = MDDialog(title="Exported", type="custom", content_cls=content, auto_dismiss=True)
