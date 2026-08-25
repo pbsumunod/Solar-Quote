@@ -79,6 +79,7 @@ class ReportScreen(MDScreen):
         super().__init__(**kwargs)
         self.name = "report"
         self._dialog: MDDialog | None = None
+        self._spinner_overlay = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -315,23 +316,17 @@ class ReportScreen(MDScreen):
         Clock.schedule_once(lambda _dt: self._do_export(kind), 0)
 
     def _show_loading(self, text: str) -> None:
-        if self._dialog:
-            self._dialog.dismiss()
-        content = MDBoxLayout(
-            orientation="vertical", spacing=dp(10), padding=(dp(20), dp(16)),
-            size_hint=(None, None), size=(dp(240), dp(124)),
+        self._dismiss_loading()
+        self._spinner_overlay = AnchorLayout(anchor_x='center', anchor_y='center')
+        self._spinner_overlay.add_widget(
+            MDSpinner(size_hint=(None, None), size=(dp(48), dp(48)), active=True, color=ACCENT)
         )
-        spinner_cell = AnchorLayout(size_hint_y=None, height=dp(44))
-        spinner_cell.add_widget(MDSpinner(
-            size_hint=(None, None), size=(dp(36), dp(36)), active=True, color=ACCENT,
-        ))
-        content.add_widget(spinner_cell)
-        content.add_widget(MDLabel(
-            text=text, halign="center", valign="middle", text_size=(dp(200), dp(32)),
-            theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(32),
-        ))
-        self._dialog = MDDialog(title="", type="custom", content_cls=content, auto_dismiss=False)
-        self._dialog.open()
+        self.add_widget(self._spinner_overlay)
+
+    def _dismiss_loading(self) -> None:
+        if self._spinner_overlay and self._spinner_overlay.parent:
+            self._spinner_overlay.parent.remove_widget(self._spinner_overlay)
+        self._spinner_overlay = None
 
     def _do_export(self, kind: str) -> None:
         try:
@@ -368,6 +363,7 @@ class ReportScreen(MDScreen):
             self._exporting = False
 
     def _show_message(self, title: str, text: str) -> None:
+        self._dismiss_loading()
         if self._dialog:
             self._dialog.dismiss()
         self._dialog = MDDialog(
@@ -377,6 +373,7 @@ class ReportScreen(MDScreen):
         self._dialog.open()
 
     def _show_export_success(self, path: str, mime_type: str, client_email: str) -> None:
+        self._dismiss_loading()
         buttons = []
         if platform == "android":
             buttons.append(MDFlatButton(
