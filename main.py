@@ -48,8 +48,10 @@ class LoadingScreenManager(MDScreenManager):
                 text="Loading...", halign="center", valign="middle",
                 text_size=(dp(160), dp(24)), size_hint_y=None, height=dp(24),
             ))
+            centered_content = AnchorLayout(size_hint=(None, None), size=(dp(200), dp(116)))
+            centered_content.add_widget(content)
             self._loading_dialog = MDDialog(
-                title="", type="custom", content_cls=content, auto_dismiss=False,
+                title="", type="custom", content_cls=centered_content, auto_dismiss=False,
             )
         if not self._loading_dialog.parent:
             Clock.schedule_once(lambda _dt: self._loading_dialog.open(), 0)
@@ -73,7 +75,7 @@ class StartupLoadingScreen(MDScreen):
             text="Preparing SolarQuote...", halign="center", valign="middle",
             text_size=(dp(220), dp(30)), size_hint_y=None, height=dp(30),
         ))
-        center = AnchorLayout()
+        center = AnchorLayout(size_hint=(None, None), size=(dp(220), dp(112)))
         center.add_widget(content)
         self.add_widget(center)
 
