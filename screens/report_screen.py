@@ -28,6 +28,7 @@ from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
+from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.spinner import MDSpinner
@@ -381,7 +382,7 @@ class ReportScreen(MDScreen):
                 on_release=lambda *_: self._view_file(path, mime_type),
             ))
             buttons.append(MDFlatButton(
-                text="EMAIL TO CLIENT", text_color=ACCENT,
+                text="EMAIL", text_color=ACCENT,
                 on_release=lambda *_: self._email_to_client(path, mime_type, client_email),
             ))
             buttons.append(MDFlatButton(
@@ -392,7 +393,17 @@ class ReportScreen(MDScreen):
 
         if self._dialog:
             self._dialog.dismiss()
-        self._dialog = MDDialog(title="Exported", text=f"Saved to:\n{path}", buttons=buttons)
+        content = MDBoxLayout(orientation="vertical", spacing=dp(8), padding=dp(16), size_hint_y=None)
+        content.add_widget(MDLabel(
+            text=f"Saved to:\n{path}", halign="center", valign="middle",
+            size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
+        ))
+        btn_grid = MDGridLayout(cols=2, spacing=dp(8), padding=dp(8), size_hint_y=None, height=dp(100))
+        for btn in buttons:
+            btn_grid.add_widget(btn)
+        content.add_widget(btn_grid)
+        content.bind(minimum_height=content.setter("height"))
+        self._dialog = MDDialog(title="Exported", type="custom", content_cls=content, auto_dismiss=True)
         self._dialog.open()
 
     def _content_uri_for(self, path: str):
