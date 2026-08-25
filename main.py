@@ -89,9 +89,8 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(SimulationScreen())
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
-        sm.current = "onboarding" if self._show_onboarding else "client"
-        # Bind after initial selection so app startup itself does not flash a modal.
         sm.bind(current=sm.show_navigation_loading)
+        sm.current = "onboarding" if self._show_onboarding else "client"
 
 
 if __name__ == "__main__":

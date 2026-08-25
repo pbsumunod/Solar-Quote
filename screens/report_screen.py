@@ -393,7 +393,7 @@ class ReportScreen(MDScreen):
 
         if self._dialog:
             self._dialog.dismiss()
-        content = MDBoxLayout(orientation="vertical", spacing=dp(8), padding=dp(16), size_hint_y=None)
+        content = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         content.add_widget(MDLabel(
             text=f"Saved to:\n{path}", halign="left",
             size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
