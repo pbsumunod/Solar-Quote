@@ -625,7 +625,7 @@ def _show_simple_message(title: str, text: str) -> None:
     dialog.open()
 
 
-def show_paywall(screen, reason: str = "") -> None:
+def show_paywall(screen, reason: str = "", on_change=None) -> None:
     """Show an upgrade dialog for free-tier limitations."""
     from kivymd.uix.button import MDFlatButton
     from kivymd.uix.dialog import MDDialog
@@ -691,6 +691,8 @@ def show_paywall(screen, reason: str = "") -> None:
             end = date.today() + timedelta(days=7)
             database.set_trial_end(end.isoformat())
             database.set_tier("pro")
+        if on_change:
+            on_change()
         _show_simple_message(
             "Trial Started",
             "Your 7-day free trial has started!\n\n"
@@ -699,6 +701,8 @@ def show_paywall(screen, reason: str = "") -> None:
 
     def _subscribe_monthly(*_args):
         dialog.dismiss()
+        if on_change:
+            on_change()
         if billing:
             billing.launch_purchase("solarquote_pro_monthly")
 

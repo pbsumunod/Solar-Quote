@@ -176,4 +176,4 @@ class AboutScreen(MDScreen):
 
     def _upgrade(self) -> None:
         from ui_style import show_paywall
-        show_paywall(self)
+        show_paywall(self, on_change=self._refresh_tier_display)
