@@ -713,11 +713,11 @@ def show_paywall(screen, reason: str = "") -> None:
 
     if not trial_end:
         buttons.append(
-            primary_button("Start Free Trial", on_release=_start_trial, size_hint_x=None, width=dp(160)),
+            MDFlatButton(text="Start Free Trial", text_color=ACCENT, on_release=_start_trial),
         )
 
     buttons.append(
-        primary_button("Subscribe", on_release=_subscribe_monthly, size_hint_x=None, width=dp(120)),
+        MDFlatButton(text="Subscribe", text_color=ACCENT, on_release=_subscribe_monthly),
     )
 
     dialog = MDDialog(

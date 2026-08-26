@@ -93,17 +93,9 @@ class AboutScreen(MDScreen):
         form.add_widget(contact_card)
 
         sub_card = section_card("crown", "Subscription")
-        from db import database
-        tier = database.get_tier()
-        tier_text = "Pro (Active)" if tier == "pro" else "Free"
-        tier_row = _LinkRow("check-circle" if tier == "pro" else "information", f"Current Plan: {tier_text}")
-        tier_row.bind(on_release=lambda *_: self._show_notice(
-            "Subscription",
-            f"Current plan: {tier_text}\n\n"
-            "Free: 3 projects, PDF only, watermark\n"
-            "Pro: Unlimited projects, all formats, no watermark",
-        ))
-        sub_card.add_widget(tier_row)
+        self._tier_row = _LinkRow("information", "Current Plan: Free")
+        self._tier_row.bind(on_release=lambda *_: self._show_tier_details())
+        sub_card.add_widget(self._tier_row)
 
         restore_row = _LinkRow("restore", "Restore Purchases")
         restore_row.bind(on_release=lambda *_: self._restore_purchases())
@@ -112,6 +104,7 @@ class AboutScreen(MDScreen):
         upgrade_row = _LinkRow("arrow-up-bold", "Upgrade to Pro")
         upgrade_row.bind(on_release=lambda *_: self._upgrade())
         sub_card.add_widget(upgrade_row)
+        self._upgrade_row = upgrade_row
 
         form.add_widget(sub_card)
 
@@ -143,6 +136,32 @@ class AboutScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = app.state.about_return_to
+
+    def on_pre_enter(self) -> None:
+        self._refresh_tier_display()
+
+    def _refresh_tier_display(self) -> None:
+        from db import database
+        tier = database.get_tier()
+        is_pro = tier == "pro"
+        icon = "check-circle" if is_pro else "information"
+        text = "Current Plan: Pro (Active)" if is_pro else "Current Plan: Free"
+        self._tier_row.children[1].text = text
+        self._upgrade_row.opacity = 0 if is_pro else 1
+        self._upgrade_row.disabled = is_pro
+        self._upgrade_row.height = 0 if is_pro else dp(40)
+        self._upgrade_row.size_hint_y = None
+
+    def _show_tier_details(self) -> None:
+        from db import database
+        tier = database.get_tier()
+        tier_text = "Pro (Active)" if tier == "pro" else "Free"
+        self._show_notice(
+            "Subscription",
+            f"Current plan: {tier_text}\n\n"
+            "Free: 3 projects, PDF only, watermark\n"
+            "Pro: Unlimited projects, all formats, no watermark",
+        )
 
     def _restore_purchases(self) -> None:
         try:
