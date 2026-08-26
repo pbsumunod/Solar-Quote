@@ -682,6 +682,15 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
     def _dismiss(*_args):
         dialog.dismiss()
 
+    def _refresh_all_labels():
+        if on_change:
+            on_change()
+        try:
+            from kivymd.app import MDApp
+            MDApp.get_running_app().root.refresh_plan_label()
+        except Exception:
+            pass
+
     def _start_trial(*_args):
         dialog.dismiss()
         if billing:
@@ -691,8 +700,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
             end = date.today() + timedelta(days=7)
             database.set_trial_end(end.isoformat())
             database.set_tier("pro")
-        if on_change:
-            on_change()
+        _refresh_all_labels()
         _show_simple_message(
             "Trial Started",
             "Your 7-day free trial has started!\n\n"
@@ -701,8 +709,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
 
     def _subscribe_monthly(*_args):
         dialog.dismiss()
-        if on_change:
-            on_change()
+        _refresh_all_labels()
         if billing:
             billing.launch_purchase("solarquote_pro_monthly")
 

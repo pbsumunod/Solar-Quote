@@ -1,7 +1,9 @@
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.boxlayout import BoxLayout
 from kivymd.app import MDApp
+from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.spinner import MDSpinner
@@ -28,6 +30,58 @@ class LoadingScreenManager(MDScreenManager):
         super().__init__(**kwargs)
         self._spinner_overlay = None
         self._dismiss_event = None
+        self._plan_label = None
+
+    def _build_plan_label(self) -> None:
+        """Create a persistent plan label at the bottom of the screen."""
+        from ui_style import ACCENT_LIGHT, ON_PRIMARY_CONTAINER, SURFACE
+
+        self._plan_label = MDLabel(
+            text="Free",
+            font_style="Caption",
+            halign="center",
+            size_hint_y=None,
+            height=dp(24),
+            theme_text_color="Custom",
+            text_color=ON_PRIMARY_CONTAINER,
+        )
+        with self._plan_label.canvas.before:
+            from kivy.graphics import Color, Rectangle
+            Color(*ACCENT_LIGHT)
+            self._plan_label_bg = Rectangle(pos=self._plan_label.pos, size=self._plan_label.size)
+
+        def _sync_bg(instance, _value):
+            self._plan_label_bg.pos = instance.pos
+            self._plan_label_bg.size = instance.size
+
+        self._plan_label.bind(pos=_sync_bg, size=_sync_bg)
+        self.refresh_plan_label()
+
+    def refresh_plan_label(self) -> None:
+        """Update the plan label text based on current tier/trial status."""
+        if not self._plan_label:
+            return
+
+        from db import database
+        tier = database.get_tier()
+        trial_end = database.get_trial_end()
+
+        if tier == "pro":
+            if trial_end:
+                from datetime import date
+                try:
+                    end = date.fromisoformat(trial_end)
+                    remaining = (end - date.today()).days
+                    if remaining > 0:
+                        self._plan_label.text = f"Pro (Trial - {remaining} days left)"
+                    else:
+                        self._plan_label.text = "Pro"
+                except (TypeError, ValueError):
+                    self._plan_label.text = "Pro"
+            else:
+                self._plan_label.text = "Pro"
+        else:
+            self._plan_label.text = "Free"
 
     def show_navigation_loading(self, *_args) -> None:
         if self._dismiss_event:
@@ -93,6 +147,8 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
         sm.bind(current=sm.show_navigation_loading)
+        sm._build_plan_label()
+        sm.add_widget(sm._plan_label)
         sm.current = "onboarding" if self._show_onboarding else "client"
 
 

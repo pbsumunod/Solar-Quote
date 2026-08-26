@@ -143,10 +143,27 @@ class AboutScreen(MDScreen):
     def _refresh_tier_display(self) -> None:
         from db import database
         tier = database.get_tier()
+        trial_end = database.get_trial_end()
         is_pro = tier == "pro"
-        icon = "check-circle" if is_pro else "information"
-        text = "Current Plan: Pro (Active)" if is_pro else "Current Plan: Free"
-        self._tier_row.children[1].text = text
+
+        if is_pro:
+            if trial_end:
+                from datetime import date
+                try:
+                    end = date.fromisoformat(trial_end)
+                    remaining = (end - date.today()).days
+                    if remaining > 0:
+                        plan_text = f"Current Plan: Pro (Trial - {remaining} days left)"
+                    else:
+                        plan_text = "Current Plan: Pro"
+                except (TypeError, ValueError):
+                    plan_text = "Current Plan: Pro"
+            else:
+                plan_text = "Current Plan: Pro"
+        else:
+            plan_text = "Current Plan: Free"
+
+        self._tier_row.children[1].text = plan_text
         self._upgrade_row.opacity = 0 if is_pro else 1
         self._upgrade_row.disabled = is_pro
         self._upgrade_row.height = 0 if is_pro else dp(40)
