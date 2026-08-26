@@ -126,6 +126,16 @@ class SolarClientFinderApp(MDApp):
         root.add_widget(self._screen_manager)
         root.add_widget(self._plan_label)
 
+        def _set_current(_inst, value):
+            self._screen_manager.current = value
+
+        def _get_current():
+            return self._screen_manager.current
+
+        from kivy.properties import AliasProperty
+        root.current = AliasProperty(_get_current, _set_current)
+        root.current = "startup_loading"
+
         self._screen_manager.add_widget(StartupLoadingScreen())
         self._screen_manager.current = "startup_loading"
         Clock.schedule_once(self._build_app_screens, 0.1)
@@ -146,7 +156,13 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
         sm.bind(current=sm.show_navigation_loading)
+        sm.bind(current=self._on_screen_change)
         sm.current = "onboarding" if self._show_onboarding else "client"
+
+    MAIN_SCREENS = {"client", "consumption", "solar", "battery", "system_design", "simulation", "roi", "report"}
+
+    def _on_screen_change(self, _inst, screen_name: str) -> None:
+        self._plan_label.opacity = 1 if screen_name in self.MAIN_SCREENS else 0
 
 
 if __name__ == "__main__":
