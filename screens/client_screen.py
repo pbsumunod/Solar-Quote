@@ -27,7 +27,7 @@ from logic.geo_data import COUNTRY_LATITUDES
 from logic.models import Project
 from ui_style import (
     ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, header_actions, keep_focused_field_visible, m3_field, picker_field, primary_button, save_button, save_current_project,
-    project_row, screen_header, section_card,
+    project_row, screen_header, section_card, show_paywall,
 )
 
 DAY_NIGHT_RATIOS = ["10/90", "20/80", "30/70", "40/60", "50/50", "60/40", "70/30", "80/20", "90/10"]
@@ -287,6 +287,9 @@ class ClientScreen(MDScreen):
         fields = project.to_fields()
         fields["quote_data"] = self._collect_quote_data()
         if self.current_project_id is None:
+            if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
+                show_paywall(self, reason="Free tier limited to 3 saved projects.")
+                return False
             self.current_project_id = database.create_project(fields)
         else:
             database.update_project(self.current_project_id, fields)
@@ -298,6 +301,9 @@ class ClientScreen(MDScreen):
     def _duplicate_project(self) -> None:
         if self.current_project_id is None:
             self._show_message("No Project", "Save the current project before duplicating it.")
+            return
+        if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
+            show_paywall(self, reason="Free tier limited to 3 saved projects.")
             return
         new_id = database.duplicate_project(self.current_project_id)
         row = database.get_project(new_id)

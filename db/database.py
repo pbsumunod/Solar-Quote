@@ -164,3 +164,45 @@ def duplicate_project(project_id: int) -> int:
     del fields["created_at"]
     del fields["updated_at"]
     return create_project(fields)
+
+
+# --- Tier / subscription helpers ------------------------------------------------
+
+FREE_PROJECT_LIMIT = 3
+
+
+def count_projects() -> int:
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+    conn.close()
+    return count
+
+
+def get_tier() -> str:
+    conn = get_connection()
+    row = conn.execute("SELECT value FROM app_settings WHERE key = 'tier'").fetchone()
+    conn.close()
+    return row["value"] if row else "free"
+
+
+def set_tier(tier: str) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM app_settings WHERE key = 'tier'")
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('tier', ?)", (tier,))
+    conn.commit()
+    conn.close()
+
+
+def get_trial_end() -> str | None:
+    conn = get_connection()
+    row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_trial_end(date_str: str) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM app_settings WHERE key = 'trial_end'")
+    conn.execute("INSERT INTO app_settings (key, value) VALUES ('trial_end', ?)", (date_str,))
+    conn.commit()
+    conn.close()

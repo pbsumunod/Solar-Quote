@@ -43,3 +43,6 @@ class AppState:
         self.export_enabled: bool = True
         self.harvest_pct: list[float] = default_solar_harvest_pct()
         self.scenario_results: dict = {}  # {scenario_name: SimulationResult}, all 3 scenarios
+
+        # Subscription tier (cached from billing/database).
+        self.is_pro: bool = False

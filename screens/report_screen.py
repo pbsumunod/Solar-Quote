@@ -33,11 +33,12 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.spinner import MDSpinner
 
+from db import database
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
 from ui_style import (
     ACCENT, TEXT_DARK, about_button, bottom_back_action, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
-    screen_header, section_card, section_label, tonal_button, with_bg,
+    screen_header, section_card, section_label, show_paywall, tonal_button, with_bg,
 )
 from widgets.line_chart import LineChart
 
@@ -308,6 +309,10 @@ class ReportScreen(MDScreen):
         # _cleanup_chart_images) out from under the other one still rendering.
         if getattr(self, "_exporting", False):
             return
+        # Gate non-PDF exports for free tier
+        if database.get_tier() == "free" and kind != "pdf":
+            show_paywall(self, reason="Upgrade to Pro to export Excel, CSV, and PowerPoint.")
+            return
         self._exporting = True
         self._show_loading(f"Generating {kind.upper()} report...")
         # Report generation (PDF/PPTX chart rendering especially) blocks the
@@ -343,7 +348,9 @@ class ReportScreen(MDScreen):
                     roi_chart_image = self._render_roi_chart(data)
                     scenario_images = self._render_scenario_charts(data)
                     chart_image_paths = [roi_chart_image] + list(scenario_images.values())
-                    generate_pdf(path, data, roi_chart_image=roi_chart_image, scenario_images=scenario_images)
+                    watermark = "SolarQuote Free" if database.get_tier() == "free" else None
+                    generate_pdf(path, data, roi_chart_image=roi_chart_image,
+                                 scenario_images=scenario_images, watermark=watermark)
                 elif kind == "excel":
                     generate_excel(path, data)
                 elif kind == "csv":

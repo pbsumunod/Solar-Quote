@@ -7,6 +7,7 @@ from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.spinner import MDSpinner
 
 from app_state import AppState
+from billing import BillingManager
 from db import database
 from screens.about_screen import AboutScreen
 from screens.battery_screen import BatteryScreen
@@ -60,8 +61,10 @@ class SolarClientFinderApp(MDApp):
     def build(self):
         self.title = "SolarQuote"
         self.state = AppState()
+        self.billing = BillingManager()
         database.configure(self.user_data_dir)
         database.init_db()
+        self.billing.initialize()
         show_onboarding = database.consume_first_launch()
 
         self.theme_cls.primary_palette = "Green"

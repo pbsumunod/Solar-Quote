@@ -609,3 +609,120 @@ class _Tappable(ButtonBehavior, BoxLayout):
     def __init__(self, on_release, **kwargs):
         super().__init__(**kwargs)
         self.bind(on_release=lambda *_a: on_release())
+
+
+# --- Paywall / upgrade dialog ---------------------------------------------------
+
+def _show_simple_message(title: str, text: str) -> None:
+    """Show a simple OK dialog (used by paywall and other screens)."""
+    from kivymd.uix.button import MDFlatButton
+    from kivymd.uix.dialog import MDDialog
+
+    dialog = MDDialog(
+        title=title, text=text,
+        buttons=[MDFlatButton(text="OK", text_color=ACCENT, on_release=lambda *_: dialog.dismiss())],
+    )
+    dialog.open()
+
+
+def show_paywall(screen, reason: str = "") -> None:
+    """Show an upgrade dialog for free-tier limitations."""
+    from kivymd.uix.button import MDFlatButton
+    from kivymd.uix.dialog import MDDialog
+
+    from db import database
+
+    tier = database.get_tier()
+    trial_end = database.get_trial_end()
+
+    if tier == "pro":
+        _show_simple_message("Already Pro", "You already have SolarQuote Pro!")
+        return
+
+    # Check if user has an active trial
+    if trial_end:
+        from datetime import date
+        try:
+            end = date.fromisoformat(trial_end)
+            if date.today() <= end:
+                remaining = (end - date.today()).days
+                _show_simple_message(
+                    "Free Trial Active",
+                    f"You have {remaining} day(s) left in your free trial.\n\n"
+                    "Upgrade to Pro to keep all features after your trial ends.",
+                )
+                return
+        except (TypeError, ValueError):
+            pass
+
+    # Get billing manager
+    try:
+        from kivymd.app import MDApp
+        billing = MDApp.get_running_app().billing
+        monthly_price = billing.get_monthly_price()
+        yearly_price = billing.get_yearly_price()
+        yearly_savings = billing.get_yearly_savings()
+    except Exception:
+        monthly_price = "P299/month"
+        yearly_price = "P2,990/year"
+        yearly_savings = "Save 17%"
+        billing = None
+
+    text = "Unlock all SolarQuote Pro features:\n\n"
+    text += "- Unlimited saved projects\n"
+    text += "- Export PDF, Excel, CSV & PowerPoint\n"
+    text += "- No watermark on reports\n"
+    text += "- 7-day free trial\n\n"
+    text += f"Monthly: {monthly_price}\n"
+    text += f"Yearly: {yearly_price} ({yearly_savings})"
+
+    if reason:
+        text = f"{reason}\n\n{text}"
+
+    def _dismiss(*_args):
+        dialog.dismiss()
+
+    def _start_trial(*_args):
+        dialog.dismiss()
+        if billing:
+            billing.start_trial()
+        else:
+            from datetime import date, timedelta
+            end = date.today() + timedelta(days=7)
+            database.set_trial_end(end.isoformat())
+            database.set_tier("pro")
+        _show_simple_message(
+            "Trial Started",
+            "Your 7-day free trial has started!\n\n"
+            "All Pro features are now unlocked.",
+        )
+
+    def _subscribe_monthly(*_args):
+        dialog.dismiss()
+        if billing:
+            billing.launch_purchase("solarquote_pro_monthly")
+
+    def _subscribe_yearly(*_args):
+        dialog.dismiss()
+        if billing:
+            billing.launch_purchase("solarquote_pro_yearly")
+
+    buttons = [
+        MDFlatButton(text="Not Now", text_color=ACCENT, on_release=_dismiss),
+    ]
+
+    if not trial_end:
+        buttons.append(
+            primary_button("Start Free Trial", on_release=_start_trial, size_hint_x=None, width=dp(160)),
+        )
+
+    buttons.append(
+        primary_button("Subscribe", on_release=_subscribe_monthly, size_hint_x=None, width=dp(120)),
+    )
+
+    dialog = MDDialog(
+        title="Upgrade to Pro",
+        text=text,
+        buttons=buttons,
+    )
+    dialog.open()

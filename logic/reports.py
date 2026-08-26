@@ -259,8 +259,20 @@ def _pdf_kv_table(pdf, pairs: list[tuple[str, str]]) -> None:
     pdf.ln(4)
 
 
+def _pdf_watermark(pdf, text: str) -> None:
+    """Draw a diagonal watermark across the current page."""
+    pdf.save_state()
+    pdf.set_font("Helvetica", "B", 60)
+    pdf.set_text_color(200, 200, 200)
+    pdf.translate(pdf.w / 2, pdf.h / 2)
+    pdf.rotate(45)
+    pdf.cell(0, 0, text, align="C")
+    pdf.restore_state()
+
+
 def generate_pdf(
     path: str, data: dict, roi_chart_image: str | None = None, scenario_images: dict | None = None,
+    watermark: str | None = None,
 ) -> None:
     """roi_chart_image: optional path to a pre-rendered PNG of the ROI screen's
     cumulative cash-flow chart (see report_screen.py's _render_roi_chart) --
@@ -284,6 +296,8 @@ def generate_pdf(
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
+    if watermark:
+        _pdf_watermark(pdf, watermark)
 
     title = data.get("company_name") or "Solar Proposal"
     pdf.set_font("Helvetica", "B", 22)
@@ -340,6 +354,8 @@ def generate_pdf(
             if not image_path or result is None:
                 continue
             pdf.add_page()
+            if watermark:
+                _pdf_watermark(pdf, watermark)
             _pdf_heading(pdf, f"{name} Day Simulation")
             pdf.image(image_path, w=pdf.epw)
             pdf.ln(4)
@@ -353,6 +369,8 @@ def generate_pdf(
             ])
 
     pdf.add_page()
+    if watermark:
+        _pdf_watermark(pdf, watermark)
     _pdf_heading(pdf, "Savings & ROI")
     payback = f"{roi['payback_years']:.1f} years" if roi["payback_years"] is not None else "Not within horizon"
     _pdf_kv_table(pdf, [
@@ -369,6 +387,8 @@ def generate_pdf(
         pdf.ln(4)
 
     pdf.add_page()
+    if watermark:
+        _pdf_watermark(pdf, watermark)
     _pdf_heading(pdf, "Financial Projection")
     from fpdf.fonts import FontFace
 

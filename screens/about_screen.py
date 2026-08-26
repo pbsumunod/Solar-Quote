@@ -25,7 +25,7 @@ from kivymd.uix.screen import MDScreen
 
 from ui_style import (
     ACCENT, APP_VERSION, BUILD_LABEL, LOGO_PATH, ON_SURFACE, ON_SURFACE_VARIANT,
-    screen_header, section_card,
+    primary_button, screen_header, section_card, tonal_button,
 )
 
 DEVELOPER_NAME = "SumClarTech"
@@ -92,6 +92,29 @@ class AboutScreen(MDScreen):
         contact_card.add_widget(contact_row)
         form.add_widget(contact_card)
 
+        sub_card = section_card("crown", "Subscription")
+        from db import database
+        tier = database.get_tier()
+        tier_text = "Pro (Active)" if tier == "pro" else "Free"
+        tier_row = _LinkRow("check-circle" if tier == "pro" else "information", f"Current Plan: {tier_text}")
+        tier_row.bind(on_release=lambda *_: self._show_notice(
+            "Subscription",
+            f"Current plan: {tier_text}\n\n"
+            "Free: 3 projects, PDF only, watermark\n"
+            "Pro: Unlimited projects, all formats, no watermark",
+        ))
+        sub_card.add_widget(tier_row)
+
+        restore_row = _LinkRow("restore", "Restore Purchases")
+        restore_row.bind(on_release=lambda *_: self._restore_purchases())
+        sub_card.add_widget(restore_row)
+
+        upgrade_row = _LinkRow("arrow-up-bold", "Upgrade to Pro")
+        upgrade_row.bind(on_release=lambda *_: self._upgrade())
+        sub_card.add_widget(upgrade_row)
+
+        form.add_widget(sub_card)
+
         legal_card = section_card("gavel", "Legal")
         tos_row = _LinkRow("file-document-outline", "Terms of Service")
         tos_row.bind(on_release=lambda *_: self._go_to("terms"))
@@ -120,3 +143,18 @@ class AboutScreen(MDScreen):
     def _go_back(self) -> None:
         app = MDApp.get_running_app()
         app.root.current = app.state.about_return_to
+
+    def _restore_purchases(self) -> None:
+        try:
+            billing = MDApp.get_running_app().billing
+            restored = billing.restore_purchases()
+            if restored:
+                self._show_notice("Restored", "Your Pro subscription has been restored!")
+            else:
+                self._show_notice("No Purchases", "No previous purchases found.")
+        except Exception:
+            self._show_notice("Error", "Could not restore purchases. Please try again later.")
+
+    def _upgrade(self) -> None:
+        from ui_style import show_paywall
+        show_paywall(self)
