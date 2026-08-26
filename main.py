@@ -32,37 +32,11 @@ class LoadingScreenManager(MDScreenManager):
         self._dismiss_event = None
         self._plan_label = None
 
-    def _build_plan_label(self) -> None:
-        """Create a persistent plan label at the bottom of the screen."""
-        from ui_style import ACCENT_LIGHT, ON_PRIMARY_CONTAINER, SURFACE
-
-        self._plan_label = MDLabel(
-            text="Free",
-            font_style="Caption",
-            halign="center",
-            size_hint_y=None,
-            height=dp(24),
-            theme_text_color="Custom",
-            text_color=ON_PRIMARY_CONTAINER,
-        )
-        with self._plan_label.canvas.before:
-            from kivy.graphics import Color, Rectangle
-            Color(*ACCENT_LIGHT)
-            self._plan_label_bg = Rectangle(pos=self._plan_label.pos, size=self._plan_label.size)
-
-        def _sync_bg(instance, _value):
-            self._plan_label_bg.pos = instance.pos
-            self._plan_label_bg.size = instance.size
-
-        self._plan_label.bind(pos=_sync_bg, size=_sync_bg)
-        self.refresh_plan_label()
-
     def refresh_plan_label(self) -> None:
         """Update the plan label text based on current tier/trial status."""
         if not self._plan_label:
             return
 
-        from db import database
         tier = database.get_tier()
         trial_end = database.get_trial_end()
 
@@ -73,7 +47,7 @@ class LoadingScreenManager(MDScreenManager):
                     end = date.fromisoformat(trial_end)
                     remaining = (end - date.today()).days
                     if remaining > 0:
-                        self._plan_label.text = f"Pro (Trial - {remaining} days left)"
+                        self._plan_label.text = f"Pro (Trial - {remaining}d left)"
                     else:
                         self._plan_label.text = "Pro"
                 except (TypeError, ValueError):
@@ -125,12 +99,37 @@ class SolarClientFinderApp(MDApp):
 
         self._show_onboarding = show_onboarding
         self._screen_manager = LoadingScreenManager()
+
+        self._plan_label = MDLabel(
+            text="Free",
+            font_style="Caption",
+            halign="center",
+            size_hint_y=None,
+            height=dp(24),
+            theme_text_color="Custom",
+            text_color=(0, 0, 0, 1),
+        )
+        with self._plan_label.canvas.before:
+            from kivy.graphics import Color, Rectangle
+            self._plan_label_color = Color(0.85, 0.95, 0.85, 1)
+            self._plan_label_bg = Rectangle(pos=self._plan_label.pos, size=self._plan_label.size)
+
+        def _sync_bg(instance, _value):
+            self._plan_label_bg.pos = instance.pos
+            self._plan_label_bg.size = instance.size
+
+        self._plan_label.bind(pos=_sync_bg, size=_sync_bg)
+        self._screen_manager._plan_label = self._plan_label
+        self._screen_manager.refresh_plan_label()
+
+        root = BoxLayout(orientation='vertical')
+        root.add_widget(self._screen_manager)
+        root.add_widget(self._plan_label)
+
         self._screen_manager.add_widget(StartupLoadingScreen())
         self._screen_manager.current = "startup_loading"
-        # Return promptly so the loader paints before the heavy wizard screens
-        # (charts, fields, and report controls) are constructed.
         Clock.schedule_once(self._build_app_screens, 0.1)
-        return self._screen_manager
+        return root
 
     def _build_app_screens(self, _dt) -> None:
         sm = self._screen_manager
@@ -147,8 +146,6 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
         sm.bind(current=sm.show_navigation_loading)
-        sm._build_plan_label()
-        sm.add_widget(sm._plan_label)
         sm.current = "onboarding" if self._show_onboarding else "client"
 
 
