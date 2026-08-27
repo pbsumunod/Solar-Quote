@@ -696,8 +696,9 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         if billing:
             billing.start_trial()
         else:
-            from datetime import date, timedelta
-            end = date.today() + timedelta(days=7)
+            import internet_time
+            from datetime import timedelta
+            end = internet_time.today() + timedelta(days=7)
             database.set_trial_end(end.isoformat())
             database.set_tier("pro")
         _refresh_all_labels()

@@ -11,7 +11,8 @@ that logic was never Qt-specific.
 
 import json
 import re
-from datetime import date
+
+import internet_time
 
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
@@ -90,7 +91,7 @@ class ClientScreen(MDScreen):
 
         contact_date_row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
         self.contact_number_field = m3_field("Contact No.", icon="phone", input_filter="int")
-        self.date_field = m3_field("Date", icon="calendar", text=date.today().isoformat())
+        self.date_field = m3_field("Date", icon="calendar", text=internet_time.today().isoformat())
         contact_date_row.add_widget(self.contact_number_field)
         contact_date_row.add_widget(self.date_field)
         client_card.add_widget(contact_date_row)
@@ -201,7 +202,7 @@ class ClientScreen(MDScreen):
         self.project_location_field.text = project.project_location
         self.contact_number_field.text = project.contact_number
         self.email_field.text = project.email
-        self.date_field.text = project.project_date or date.today().isoformat()
+        self.date_field.text = project.project_date or internet_time.today().isoformat()
         self.monthly_kwh_field.text = f"{project.monthly_kwh:.2f}"
         self._daytime_pct = project.daytime_ratio_pct
         self.ratio_field.set_value(f"{project.daytime_ratio_pct}% / {project.nighttime_ratio_pct}%")
