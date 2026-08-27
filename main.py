@@ -1,5 +1,6 @@
 from kivy.clock import Clock
 from kivy.metrics import dp
+from kivy.properties import StringProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
 from kivymd.app import MDApp
@@ -85,6 +86,27 @@ class StartupLoadingScreen(MDScreen):
         self.add_widget(center)
 
 
+class AppRoot(BoxLayout):
+    """Wraps the screen manager + plan label; exposes .current for screen navigation."""
+    current = StringProperty("")
+
+    def __init__(self, screen_manager, **kwargs):
+        super().__init__(orientation="vertical", **kwargs)
+        self._sm = screen_manager
+        self.add_widget(screen_manager)
+        screen_manager.bind(current=self._sync_current)
+
+    def _sync_current(self, _inst, value):
+        self.current = value
+
+    def _set_screen(self, _inst, value):
+        self._sm.current = value
+
+    def on_current(self, _inst, value):
+        if self._sm.current != value:
+            self._sm.current = value
+
+
 class SolarClientFinderApp(MDApp):
     def build(self):
         self.title = "SolarQuote"
@@ -122,19 +144,8 @@ class SolarClientFinderApp(MDApp):
         self._screen_manager._plan_label = self._plan_label
         self._screen_manager.refresh_plan_label()
 
-        root = BoxLayout(orientation='vertical')
-        root.add_widget(self._screen_manager)
+        root = AppRoot(self._screen_manager)
         root.add_widget(self._plan_label)
-
-        def _set_current(_inst, value):
-            self._screen_manager.current = value
-
-        def _get_current():
-            return self._screen_manager.current
-
-        from kivy.properties import AliasProperty
-        root.current = AliasProperty(_get_current, _set_current)
-        root.current = "startup_loading"
 
         self._screen_manager.add_widget(StartupLoadingScreen())
         self._screen_manager.current = "startup_loading"
