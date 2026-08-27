@@ -641,11 +641,11 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
 
     # Check if user has an active trial
     if trial_end:
-        from datetime import date
+        import internet_time
         try:
             end = date.fromisoformat(trial_end)
-            if date.today() <= end:
-                remaining = (end - date.today()).days
+            if internet_time.today() <= end:
+                remaining = (end - internet_time.today()).days
                 _show_simple_message(
                     "Free Trial Active",
                     f"You have {remaining} day(s) left in your free trial.\n\n"

@@ -6,6 +6,7 @@ Android apps can't write next to their own installed package like a desktop app 
 """
 
 import sqlite3
+from datetime import date
 from pathlib import Path
 
 DB_PATH: Path | None = None
