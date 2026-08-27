@@ -96,6 +96,9 @@ class AppRoot(BoxLayout):
         self.add_widget(screen_manager)
         screen_manager.bind(current=self._sync_current)
 
+    def refresh_plan_label(self) -> None:
+        self._sm.refresh_plan_label()
+
     def _sync_current(self, _inst, value):
         self.current = value
 
