@@ -99,6 +99,9 @@ class AppRoot(BoxLayout):
     def refresh_plan_label(self) -> None:
         self._sm.refresh_plan_label()
 
+    def get_screen(self, name: str):
+        return self._sm.get_screen(name)
+
     def _sync_current(self, _inst, value):
         self.current = value
 
