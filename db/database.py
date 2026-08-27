@@ -186,9 +186,9 @@ def get_tier() -> str:
         trial_row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
         trial_end = trial_row["value"] if trial_row else None
         if trial_end:
-            from datetime import date
+            import internet_time
             try:
-                if date.today() > date.fromisoformat(trial_end):
+                if internet_time.today() > date.fromisoformat(trial_end):
                     conn.close()
                     set_tier("free")
                     return "free"

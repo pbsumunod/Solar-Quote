@@ -236,27 +236,30 @@ class BillingManager:
         self._save_tier_to_db(value)
 
     def start_trial(self) -> None:
+        import internet_time
         from db import database
-        end = date.today() + timedelta(days=TRIAL_DAYS)
+        end = internet_time.today() + timedelta(days=TRIAL_DAYS)
         database.set_trial_end(end.isoformat())
         self.set_pro(True)
 
     def has_active_trial(self) -> bool:
         try:
+            import internet_time
             from db import database
             trial_end = database.get_trial_end()
             if trial_end:
-                return date.today() <= date.fromisoformat(trial_end)
+                return internet_time.today() <= date.fromisoformat(trial_end)
         except (TypeError, ValueError):
             pass
         return False
 
     def get_trial_days_left(self) -> int:
         try:
+            import internet_time
             from db import database
             trial_end = database.get_trial_end()
             if trial_end:
-                return max(0, (date.fromisoformat(trial_end) - date.today()).days)
+                return max(0, (date.fromisoformat(trial_end) - internet_time.today()).days)
         except (TypeError, ValueError):
             pass
         return 0

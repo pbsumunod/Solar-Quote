@@ -11,6 +11,7 @@ from kivymd.uix.spinner import MDSpinner
 
 from app_state import AppState
 from billing import BillingManager
+import internet_time
 from db import database
 from screens.about_screen import AboutScreen
 from screens.battery_screen import BatteryScreen
@@ -43,10 +44,10 @@ class LoadingScreenManager(MDScreenManager):
 
         if tier == "pro":
             if trial_end:
+                import internet_time
                 from datetime import date
                 try:
-                    end = date.fromisoformat(trial_end)
-                    remaining = (end - date.today()).days
+                    remaining = (date.fromisoformat(trial_end) - internet_time.today()).days
                     if remaining > 0:
                         self._plan_label.text = f"Pro (Trial - {remaining}d left)"
                     else:
@@ -121,6 +122,7 @@ class SolarClientFinderApp(MDApp):
         database.configure(self.user_data_dir)
         database.init_db()
         self.billing.initialize()
+        internet_time.init()
         show_onboarding = database.consume_first_launch()
 
         self.theme_cls.primary_palette = "Green"
