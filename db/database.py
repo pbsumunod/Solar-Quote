@@ -181,8 +181,21 @@ def count_projects() -> int:
 def get_tier() -> str:
     conn = get_connection()
     row = conn.execute("SELECT value FROM app_settings WHERE key = 'tier'").fetchone()
+    tier = row["value"] if row else "free"
+    if tier == "pro":
+        trial_row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
+        trial_end = trial_row["value"] if trial_row else None
+        if trial_end:
+            from datetime import date
+            try:
+                if date.today() > date.fromisoformat(trial_end):
+                    conn.close()
+                    set_tier("free")
+                    return "free"
+            except (TypeError, ValueError):
+                pass
     conn.close()
-    return row["value"] if row else "free"
+    return tier
 
 
 def set_tier(tier: str) -> None:

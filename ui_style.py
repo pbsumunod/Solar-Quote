@@ -711,12 +711,29 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         dialog.dismiss()
         _refresh_all_labels()
         if billing:
-            billing.launch_purchase("solarquote_pro_monthly")
+            from kivy.utils import platform
+            if platform == "android":
+                billing.launch_purchase("solarquote_pro_monthly")
+            else:
+                _show_simple_message(
+                    "Subscribe",
+                    "Subscriptions are available on Android via Google Play.\n\n"
+                    "On this device you can only test the 7-day free trial.",
+                )
+        _refresh_all_labels()
 
     def _subscribe_yearly(*_args):
         dialog.dismiss()
         if billing:
-            billing.launch_purchase("solarquote_pro_yearly")
+            from kivy.utils import platform
+            if platform == "android":
+                billing.launch_purchase("solarquote_pro_yearly")
+            else:
+                _show_simple_message(
+                    "Subscribe",
+                    "Subscriptions are available on Android via Google Play.\n\n"
+                    "On this device you can only test the 7-day free trial.",
+                )
 
     buttons = [
         MDFlatButton(text="Not Now", text_color=ACCENT, on_release=_dismiss),
