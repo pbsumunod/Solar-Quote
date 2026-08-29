@@ -84,18 +84,18 @@ jobs:
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           # CPython 3.11.9's own Modules/grpmodule.c calls setgrent()/
-          # getgrent()/endgrent() without an explicit declaration in scope
-          # (long-standing on Android/bionic, previously harmless) --
-          # started failing the whole python3 recipe build with "implicit
-          # declaration of function ... is invalid in C99 [-Werror,
-          # -Wimplicit-function-declaration]" with no changes on this repo's
-          # side, since every buildozer.spec version bump changes its cache
-          # key, meaning this recipe gets freshly rebuilt on every release
-          # regardless -- so a newer default in the runner's environment
-          # started tripping a warning that's always been there. Downgrades
-          # that one warning class back to non-fatal without disabling
-          # -Werror generally, so other genuine C errors still fail loudly.
-          CFLAGS: "-Wno-error=implicit-function-declaration"
+          # getgrent()/endgrent(), which aren't declared under strict
+          # -std=c11 without this glibc feature-test macro exposed --
+          # CPython's configure forces -Werror=implicit-function-declaration
+          # as its own hardening check, turning that into a hard build
+          # failure. A -Wno-error=... flag here does NOT fix it: configure
+          # appends its own -Werror flag *after* whatever CFLAGS supplies,
+          # and flag order decides for competing GCC/Clang -W-family flags
+          # on the same warning, so configure's flag wins regardless. Only
+          # covers hostpython3's host-side build -- recipes/python3's own
+          # get_recipe_env() overwrites CFLAGS outright for the actual
+          # NDK-cross-compiled target build and needed a separate fix there.
+          CFLAGS: "-D_DEFAULT_SOURCE"
         run: yes | buildozer android release
 
       - name: Verify the AAB is actually signed

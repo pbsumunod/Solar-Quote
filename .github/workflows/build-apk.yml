@@ -88,10 +88,11 @@ jobs:
 
       - name: Build APK
         env:
-          # See build-release-aab.yml's identical env var for why -- same
-          # recipe, same risk here whenever buildozer.spec changes force a
-          # fresh python3 rebuild.
-          CFLAGS: "-Wno-error=implicit-function-declaration"
+          # See build-release-aab.yml's identical env var (and
+          # recipes/python3's override) for why -- same recipe, same risk
+          # here whenever buildozer.spec changes force a fresh python3
+          # rebuild.
+          CFLAGS: "-D_DEFAULT_SOURCE"
         run: yes | buildozer android debug
 
       - name: Upload APK
