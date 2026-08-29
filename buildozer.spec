@@ -38,6 +38,13 @@ p4a.hook = ./p4a_hooks.py
 android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:6.2.1
 android.res_xml = android_res/file_paths.xml
 
+# Play Console requires an Android App Bundle (.aab) for new app uploads, not
+# a raw .apk (Google stopped accepting .apk for new apps in Aug 2021). This
+# only affects `buildozer android release`, signed for Play Console -- the
+# debug builds used for direct-install testing (see .github/workflows/
+# build-apk.yml) are unaffected and stay .apk.
+android.release_artifact = aab
+
 [buildozer]
 log_level = 2
 warn_on_root = 0
