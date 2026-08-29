@@ -260,7 +260,8 @@ def _pdf_kv_table(pdf, pairs: list[tuple[str, str]]) -> None:
 
 
 def _pdf_watermark(pdf, text: str) -> None:
-    """Draw a diagonal watermark across the current page.
+    """Draw a diagonal watermark across the current page, without disturbing
+    where the next piece of real content gets drawn.
 
     fpdf2 2.7.9 (pinned in buildozer.spec) has no save_state()/restore_state()/
     translate() methods -- those never existed on this version's FPDF class, so
@@ -268,15 +269,25 @@ def _pdf_watermark(pdf, text: str) -> None:
     free-tier) PDF export, crashing the only export format free users are
     allowed. `rotation()` is the current API for a rotated drawing: it's a
     context manager that rotates around a given point and, via local_context(),
-    automatically saves and restores the graphics state (including font and
-    text color) on exit -- no manual save/restore needed.
+    automatically saves and restores the graphics *state* (font, text color,
+    etc.) on exit. It does NOT cover the drawing cursor (pdf.x/pdf.y) --
+    local_context()'s own documented list of restored properties has no x/y
+    in it, and rotation()'s docstring only promises rotation itself doesn't
+    move the cursor, not that a set_xy() call made inside the block gets
+    undone on exit. Positioning the watermark with set_xy() therefore left
+    the cursor sitting at the watermark's coordinates (page center) instead
+    of back where it was, so every element drawn immediately after a
+    watermarked page -- title, tables, everything -- started from the wrong
+    position. Save and restore x/y by hand around it.
     """
+    saved_x, saved_y = pdf.x, pdf.y
     cx, cy = pdf.w / 2, pdf.h / 2
     with pdf.rotation(45, x=cx, y=cy):
         pdf.set_font("Helvetica", "B", 60)
         pdf.set_text_color(200, 200, 200)
         pdf.set_xy(0, cy)
         pdf.cell(pdf.w, 0, text, align="C")
+    pdf.set_xy(saved_x, saved_y)
 
 
 def generate_pdf(

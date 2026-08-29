@@ -1,4 +1,5 @@
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.anchorlayout import AnchorLayout
@@ -25,6 +26,22 @@ from screens.simulation_screen import SimulationScreen
 from screens.solar_screen import SolarScreen
 from screens.system_design_screen import SystemDesignScreen
 
+# ui_style.keep_focused_field_visible() scrolls a focused field above the
+# Android keyboard by calling ScrollView.scroll_to() -- but that can only
+# compute a correct position if Kivy's own Window.height has actually
+# shrunk to account for the keyboard. AndroidManifest's windowSoftInputMode
+# (set to "adjustResize" in p4a_hooks.py) only tells ANDROID to resize the
+# activity; Kivy's SDL2 layer needs its own, separate softinput_mode set to
+# translate that into a Window resize it and everything built on it (every
+# ScrollView, every scroll_to() call) can actually see. Left unset (the
+# default), Kivy does nothing on its own when the keyboard opens, so
+# scroll_to() was scrolling within a Window that, as far as Kivy knew,
+# hadn't changed size at all. "resize" (not "pan"/"below_target", Kivy's own
+# built-in panning modes) is the one that only changes what Window.height
+# reports rather than also independently panning content itself -- picked
+# specifically to complement keep_focused_field_visible's own scrolling
+# instead of fighting it with a second, competing adjustment.
+Window.softinput_mode = "resize"
 
 class LoadingScreenManager(MDScreenManager):
     """Briefly acknowledge every in-app navigation with a centered spinner."""

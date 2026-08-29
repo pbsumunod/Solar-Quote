@@ -693,6 +693,32 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         except Exception:
             pass
 
+    def _report_launch_failure(reason: str) -> None:
+        # launch_purchase() used to fail silently on every one of these --
+        # tapping Start Free Trial / Subscribe just did nothing, with no way
+        # to tell whether Play wasn't connected yet, the subscription
+        # products aren't set up/active in Play Console, or something else
+        # entirely. "" means it actually launched (Play's own sheet is
+        # showing now); anything else needs a message so the user isn't
+        # left staring at an unresponsive button.
+        if not reason or reason == "not_android":
+            return
+        messages = {
+            "not_connected": (
+                "Could not connect to Google Play Billing. Check your internet "
+                "connection and try again in a moment."
+            ),
+            "product_not_ready": (
+                "Still loading subscription details from Google Play -- try again "
+                "in a few seconds. If this keeps happening, the subscription may "
+                "not be active in Play Console yet."
+            ),
+            "launch_failed": "Could not open the Google Play purchase screen. Please try again.",
+        }
+        _show_simple_message(
+            "Couldn't Open Purchase", messages.get(reason, "Something went wrong. Please try again."),
+        )
+
     def _start_trial(*_args):
         dialog.dismiss()
         from kivy.utils import platform
@@ -711,13 +737,16 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
             # granting Pro access happens asynchronously once Play reports
             # the resulting purchase back (see billing.py's
             # PurchasesUpdatedListener), not synchronously here.
-            billing.launch_purchase("solarquote_pro_monthly")
-            _show_simple_message(
-                "Continue in Google Play",
-                "Finish setting up your subscription in the Google Play sheet "
-                "that just opened -- it'll show your free trial terms before "
-                "anything is charged.",
-            )
+            reason = billing.launch_purchase("solarquote_pro_monthly")
+            if reason:
+                _report_launch_failure(reason)
+            else:
+                _show_simple_message(
+                    "Continue in Google Play",
+                    "Finish setting up your subscription in the Google Play sheet "
+                    "that just opened -- it'll show your free trial terms before "
+                    "anything is charged.",
+                )
         else:
             # Non-Android (desktop dev/testing) or billing unavailable: no
             # Play account to tie a real trial to, so fall back to a purely
@@ -740,7 +769,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         if billing:
             from kivy.utils import platform
             if platform == "android":
-                billing.launch_purchase("solarquote_pro_monthly")
+                _report_launch_failure(billing.launch_purchase("solarquote_pro_monthly"))
             else:
                 _show_simple_message(
                     "Subscribe",
@@ -754,7 +783,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         if billing:
             from kivy.utils import platform
             if platform == "android":
-                billing.launch_purchase("solarquote_pro_yearly")
+                _report_launch_failure(billing.launch_purchase("solarquote_pro_yearly"))
             else:
                 _show_simple_message(
                     "Subscribe",

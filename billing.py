@@ -336,20 +336,28 @@ class BillingManager:
     # Purchase flow
     # ------------------------------------------------------------------
 
-    def launch_purchase(self, product_id: str) -> None:
-        """Launch Google Play purchase flow for the given product."""
+    def launch_purchase(self, product_id: str) -> str:
+        """Launch Google Play purchase flow for the given product.
+
+        Returns "" on success (Play's own purchase sheet takes over from
+        here -- the actual grant happens later, asynchronously, via
+        _on_purchases_updated). Returns a short reason code on failure so
+        the caller can tell the user *why* nothing happened instead of the
+        button just silently doing nothing, which every one of these early
+        returns used to do.
+        """
         if platform != "android":
-            return
+            return "not_android"
 
         if not self._connected or not self._billing_client or not self._activity:
             log.warning("Billing not connected, cannot launch purchase")
-            return
+            return "not_connected"
 
         cached = self._product_details.get(product_id)
         if not cached:
             log.warning("No product details cached yet for %s -- retrying fetch", product_id)
             self._query_product_details()
-            return
+            return "product_not_ready"
 
         try:
             from jnius import autoclass
@@ -371,8 +379,10 @@ class BillingManager:
                            .setProductDetailsParamsList(params_list)
                            .build())
             self._billing_client.launchBillingFlow(self._activity, flow_params)
+            return ""
         except Exception as exc:
             log.warning("launchBillingFlow failed: %s", exc)
+            return "launch_failed"
 
     def _on_purchases_updated(self, billing_result, purchases_list) -> None:
         """Callback for the flow started by launch_purchase() -- Play reports

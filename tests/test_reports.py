@@ -1,6 +1,25 @@
 from types import SimpleNamespace
 
-from logic.reports import generate_pdf, generate_pptx
+from fpdf import FPDF
+
+from logic.reports import _pdf_watermark, generate_pdf, generate_pptx
+
+
+def test_pdf_watermark_does_not_move_the_drawing_cursor():
+    # Regression test: rotation()'s local_context() restores graphics state
+    # (font, color, etc.) on exit but not the drawing cursor -- set_xy()
+    # inside _pdf_watermark left pdf.x/pdf.y at the watermark's coordinates
+    # (page center) instead of back where they were, so every element drawn
+    # right after a watermarked page -- title, tables, everything -- started
+    # from the wrong position, visibly shifting the whole report.
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "", 12)
+    before = (pdf.x, pdf.y)
+
+    _pdf_watermark(pdf, "SolarQuote Free")
+
+    assert (pdf.x, pdf.y) == before
 
 
 def test_generate_pdf_uses_portable_fonttools_implementation(tmp_path):

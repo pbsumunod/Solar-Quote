@@ -28,7 +28,6 @@ from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDFlatButton
 from kivymd.uix.dialog import MDDialog
-from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.spinner import MDSpinner
@@ -405,12 +404,21 @@ class ReportScreen(MDScreen):
             text=f"Saved to:\n{path}", halign="left",
             size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
         ))
-        btn_grid = MDGridLayout(cols=2, spacing=dp(8), padding=dp(8), size_hint_y=None)
+        # One button per row, each full-width -- not a 2-column grid. MDDialog
+        # caps its own width at 280dp on mobile (kivymd's DEVICE_TYPE check),
+        # which after this dialog's padding leaves each grid column only
+        # ~100dp; MDFlatButton enforces its own text-based minimum width
+        # regardless of size_hint_x, so "SHARE" (and anything longer) simply
+        # rendered past its allocated column and off the edge of the dialog
+        # card. A single column has no such budget to blow through.
+        btn_col = MDBoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
         for btn in buttons:
             btn.size_hint_x = 1
-            btn_grid.add_widget(btn)
-        btn_grid.bind(minimum_height=btn_grid.setter("height"))
-        content.add_widget(btn_grid)
+            btn.size_hint_y = None
+            btn.height = dp(48)
+            btn_col.add_widget(btn)
+        btn_col.bind(minimum_height=btn_col.setter("height"))
+        content.add_widget(btn_col)
         content.bind(minimum_height=content.setter("height"))
         self._dialog = MDDialog(title="Exported", type="custom", content_cls=content, auto_dismiss=True)
         self._dialog.open()
