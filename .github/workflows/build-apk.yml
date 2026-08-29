@@ -87,6 +87,11 @@ jobs:
             buildozer-v4-${{ hashFiles('buildozer.spec') }}-
 
       - name: Build APK
+        env:
+          # See build-release-aab.yml's identical env var for why -- same
+          # recipe, same risk here whenever buildozer.spec changes force a
+          # fresh python3 rebuild.
+          CFLAGS: "-Wno-error=implicit-function-declaration"
         run: yes | buildozer android debug
 
       - name: Upload APK

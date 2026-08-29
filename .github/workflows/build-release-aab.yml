@@ -83,6 +83,19 @@ jobs:
           P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           P4A_RELEASE_KEYALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           P4A_RELEASE_KEYALIAS_PASSWD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # CPython 3.11.9's own Modules/grpmodule.c calls setgrent()/
+          # getgrent()/endgrent() without an explicit declaration in scope
+          # (long-standing on Android/bionic, previously harmless) --
+          # started failing the whole python3 recipe build with "implicit
+          # declaration of function ... is invalid in C99 [-Werror,
+          # -Wimplicit-function-declaration]" with no changes on this repo's
+          # side, since every buildozer.spec version bump changes its cache
+          # key, meaning this recipe gets freshly rebuilt on every release
+          # regardless -- so a newer default in the runner's environment
+          # started tripping a warning that's always been there. Downgrades
+          # that one warning class back to non-fatal without disabling
+          # -Werror generally, so other genuine C errors still fail loudly.
+          CFLAGS: "-Wno-error=implicit-function-declaration"
         run: yes | buildozer android release
 
       - name: Verify the AAB is actually signed
