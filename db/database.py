@@ -171,6 +171,12 @@ def duplicate_project(project_id: int) -> int:
 
 FREE_PROJECT_LIMIT = 3
 
+_DATE_WATERMARK_KEY = "date_watermark"
+# ~2.7 years. A jump bigger than this in one reading is far more likely to be a
+# bad API response or a fat-fingered device clock than real elapsed time, so
+# it's treated as noise rather than ratcheted in -- see _trusted_today().
+_MAX_TRUSTED_FORWARD_JUMP_DAYS = 1000
+
 
 def count_projects() -> int:
     conn = get_connection()
@@ -179,23 +185,91 @@ def count_projects() -> int:
     return count
 
 
+def _trusted_today(conn: sqlite3.Connection) -> date:
+    """Tamper-resistant "today", reusing an already-open connection.
+
+    internet_time.today() is the best single estimate available (network-
+    verified when a fetch has succeeded, the device clock otherwise) but is
+    not trustworthy on its own: on a device that's offline for the trial's
+    whole 7 days -- an ordinary case for a field solar installer -- it's just
+    the device clock, and a user can wind that backward at any time to keep
+    re-entering an unexpired trial window.
+
+    Instead, persist the latest date ever computed here and never let the
+    effective "today" go backward from it, regardless of what the clock says
+    on a later call. A backward-set device clock is simply outrun by the
+    watermark and has no effect; a forward-set one only ever pulls today
+    forward (which can't extend anyone's access). The one failure mode this
+    doesn't cover is a device that is rolled back *before* its very first use
+    of the app -- there's no prior watermark yet to compare against, so that
+    first reading has to be trusted as-is.
+    """
+    row = conn.execute("SELECT value FROM app_settings WHERE key = ?", (_DATE_WATERMARK_KEY,)).fetchone()
+    watermark = None
+    if row:
+        try:
+            watermark = date.fromisoformat(row["value"])
+        except ValueError:
+            watermark = None
+
+    import internet_time
+    candidate = internet_time.today()
+
+    if watermark is None:
+        best = candidate
+    elif candidate <= watermark:
+        best = watermark
+    elif (candidate - watermark).days > _MAX_TRUSTED_FORWARD_JUMP_DAYS:
+        best = watermark  # implausible jump -- likely bad data, don't trust it
+    else:
+        best = candidate
+
+    if best != watermark:
+        conn.execute("DELETE FROM app_settings WHERE key = ?", (_DATE_WATERMARK_KEY,))
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?, ?)", (_DATE_WATERMARK_KEY, best.isoformat()),
+        )
+        conn.commit()
+    return best
+
+
+def get_trusted_today() -> date:
+    """Tamper-resistant "today" for any trial/subscription date comparison --
+    use this instead of internet_time.today() or datetime.date.today() for
+    anything that gates a paid feature. See _trusted_today() for why."""
+    conn = get_connection()
+    try:
+        return _trusted_today(conn)
+    finally:
+        conn.close()
+
+
 def get_tier() -> str:
     conn = get_connection()
     row = conn.execute("SELECT value FROM app_settings WHERE key = 'tier'").fetchone()
     tier = row["value"] if row else "free"
+    downgrade = False
     if tier == "pro":
-        trial_row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
-        trial_end = trial_row["value"] if trial_row else None
-        if trial_end:
-            import internet_time
-            try:
-                if internet_time.today() > date.fromisoformat(trial_end):
-                    conn.close()
-                    set_tier("free")
-                    return "free"
-            except (TypeError, ValueError):
-                pass
+        source_row = conn.execute("SELECT value FROM app_settings WHERE key = 'pro_source'").fetchone()
+        source = source_row["value"] if source_row else None
+        # Only a trial expires on a date check. A Play Store purchase's
+        # validity is decided by billing.py re-querying Google Play, not by
+        # comparing dates here -- otherwise a leftover trial_end from before
+        # someone subscribed for real would downgrade a paying subscriber
+        # back to Free the moment that old trial date passed.
+        if source == "trial":
+            trial_row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
+            trial_end = trial_row["value"] if trial_row else None
+            if trial_end:
+                try:
+                    if _trusted_today(conn) > date.fromisoformat(trial_end):
+                        downgrade = True
+                except ValueError:
+                    pass
     conn.close()
+    if downgrade:
+        set_tier("free")
+        return "free"
     return tier
 
 
@@ -207,6 +281,24 @@ def set_tier(tier: str) -> None:
     conn.close()
 
 
+def get_pro_source() -> str | None:
+    """'trial' or 'purchase' -- which one 'pro' currently means, so get_tier()
+    knows whether a trial_end date should ever expire it."""
+    conn = get_connection()
+    row = conn.execute("SELECT value FROM app_settings WHERE key = 'pro_source'").fetchone()
+    conn.close()
+    return row["value"] if row else None
+
+
+def set_pro_source(source: str | None) -> None:
+    conn = get_connection()
+    conn.execute("DELETE FROM app_settings WHERE key = 'pro_source'")
+    if source is not None:
+        conn.execute("INSERT INTO app_settings (key, value) VALUES ('pro_source', ?)", (source,))
+    conn.commit()
+    conn.close()
+
+
 def get_trial_end() -> str | None:
     conn = get_connection()
     row = conn.execute("SELECT value FROM app_settings WHERE key = 'trial_end'").fetchone()
@@ -214,9 +306,11 @@ def get_trial_end() -> str | None:
     return row["value"] if row else None
 
 
-def set_trial_end(date_str: str) -> None:
+def set_trial_end(date_str: str | None) -> None:
+    """Pass None to clear it (done once a real purchase supersedes a trial)."""
     conn = get_connection()
     conn.execute("DELETE FROM app_settings WHERE key = 'trial_end'")
-    conn.execute("INSERT INTO app_settings (key, value) VALUES ('trial_end', ?)", (date_str,))
+    if date_str is not None:
+        conn.execute("INSERT INTO app_settings (key, value) VALUES ('trial_end', ?)", (date_str,))
     conn.commit()
     conn.close()

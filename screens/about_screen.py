@@ -148,11 +148,10 @@ class AboutScreen(MDScreen):
 
         if is_pro:
             if trial_end:
-                import internet_time
                 from datetime import date
                 try:
                     end = date.fromisoformat(trial_end)
-                    remaining = (end - internet_time.today()).days
+                    remaining = (end - database.get_trusted_today()).days
                     if remaining > 0:
                         plan_text = f"Current Plan: Pro (Trial - {remaining} days left)"
                     else:

@@ -7,6 +7,8 @@ painted on every interactive element. See the "SolarQuote Client Screen" design
 mockup for the reference layout this module implements in Kivy.
 """
 
+from datetime import date
+
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
 from kivy.metrics import dp
@@ -641,11 +643,11 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
 
     # Check if user has an active trial
     if trial_end:
-        import internet_time
         try:
             end = date.fromisoformat(trial_end)
-            if internet_time.today() <= end:
-                remaining = (end - internet_time.today()).days
+            today = database.get_trusted_today()
+            if today <= end:
+                remaining = (end - today).days
                 _show_simple_message(
                     "Free Trial Active",
                     f"You have {remaining} day(s) left in your free trial.\n\n"
@@ -696,10 +698,10 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         if billing:
             billing.start_trial()
         else:
-            import internet_time
             from datetime import timedelta
-            end = internet_time.today() + timedelta(days=7)
+            end = database.get_trusted_today() + timedelta(days=7)
             database.set_trial_end(end.isoformat())
+            database.set_pro_source("trial")
             database.set_tier("pro")
         _refresh_all_labels()
         _show_simple_message(
@@ -710,7 +712,6 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
 
     def _subscribe_monthly(*_args):
         dialog.dismiss()
-        _refresh_all_labels()
         if billing:
             from kivy.utils import platform
             if platform == "android":
@@ -735,6 +736,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
                     "Subscriptions are available on Android via Google Play.\n\n"
                     "On this device you can only test the 7-day free trial.",
                 )
+        _refresh_all_labels()
 
     buttons = [
         MDFlatButton(text="Not Now", text_color=ACCENT, on_release=_dismiss),
@@ -745,8 +747,14 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
             MDFlatButton(text="Start Free Trial", text_color=ACCENT, on_release=_start_trial),
         )
 
+    # Both plans from the pricing shown above need their own button --
+    # previously only "Subscribe" existed and it always bought the monthly
+    # plan, so the yearly price was advertised but unreachable.
     buttons.append(
-        MDFlatButton(text="Subscribe", text_color=ACCENT, on_release=_subscribe_monthly),
+        MDFlatButton(text="Subscribe Monthly", text_color=ACCENT, on_release=_subscribe_monthly),
+    )
+    buttons.append(
+        MDFlatButton(text="Subscribe Yearly", text_color=ACCENT, on_release=_subscribe_yearly),
     )
 
     dialog = MDDialog(

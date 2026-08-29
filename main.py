@@ -44,10 +44,9 @@ class LoadingScreenManager(MDScreenManager):
 
         if tier == "pro":
             if trial_end:
-                import internet_time
                 from datetime import date
                 try:
-                    remaining = (date.fromisoformat(trial_end) - internet_time.today()).days
+                    remaining = (date.fromisoformat(trial_end) - database.get_trusted_today()).days
                     if remaining > 0:
                         self._plan_label.text = f"Pro (Trial - {remaining}d left)"
                     else:

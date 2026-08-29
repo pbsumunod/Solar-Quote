@@ -260,14 +260,23 @@ def _pdf_kv_table(pdf, pairs: list[tuple[str, str]]) -> None:
 
 
 def _pdf_watermark(pdf, text: str) -> None:
-    """Draw a diagonal watermark across the current page."""
-    pdf.save_state()
-    pdf.set_font("Helvetica", "B", 60)
-    pdf.set_text_color(200, 200, 200)
-    pdf.translate(pdf.w / 2, pdf.h / 2)
-    pdf.rotate(45)
-    pdf.cell(0, 0, text, align="C")
-    pdf.restore_state()
+    """Draw a diagonal watermark across the current page.
+
+    fpdf2 2.7.9 (pinned in buildozer.spec) has no save_state()/restore_state()/
+    translate() methods -- those never existed on this version's FPDF class, so
+    calling them raised AttributeError on every single watermarked (i.e. every
+    free-tier) PDF export, crashing the only export format free users are
+    allowed. `rotation()` is the current API for a rotated drawing: it's a
+    context manager that rotates around a given point and, via local_context(),
+    automatically saves and restores the graphics state (including font and
+    text color) on exit -- no manual save/restore needed.
+    """
+    cx, cy = pdf.w / 2, pdf.h / 2
+    with pdf.rotation(45, x=cx, y=cy):
+        pdf.set_font("Helvetica", "B", 60)
+        pdf.set_text_color(200, 200, 200)
+        pdf.set_xy(0, cy)
+        pdf.cell(pdf.w, 0, text, align="C")
 
 
 def generate_pdf(
