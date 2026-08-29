@@ -1,0 +1,115 @@
+"""Override of python-for-android's built-in freetype recipe, identical
+except for `url`: download.savannah.gnu.org was returning a persistent
+502 Bad Gateway (confirmed directly with curl, not just in CI -- multiple
+build attempts in a row failed on the exact same download), so this points
+at SourceForge's mirror of the same release tarball instead (also FreeType's
+own officially-listed distribution point, per the upstream recipe's own
+docstring). Everything else is unchanged from
+pythonforandroid/recipes/freetype/__init__.py in the p4a checkout -- if
+python-for-android bumps its pinned freetype version, mirror that change
+here too so the URL keeps resolving to a real release rather than a 404.
+"""
+
+from multiprocessing import cpu_count
+from os.path import exists, join
+
+import sh
+from pythonforandroid.logger import info, shprint
+from pythonforandroid.recipe import Recipe
+from pythonforandroid.util import current_directory
+
+
+class FreetypeRecipe(Recipe):
+    version = '2.14.1'
+    url = 'https://downloads.sourceforge.net/project/freetype/freetype2/{version}/freetype-{version}.tar.gz'  # noqa
+    built_libraries = {'libfreetype.so': 'objs/.libs'}
+
+    def get_recipe_env(self, arch=None, with_harfbuzz=False):
+        env = super().get_recipe_env(arch)
+        if with_harfbuzz:
+            harfbuzz_build = self.get_recipe(
+                'harfbuzz', self.ctx
+            ).get_build_dir(arch.arch)
+            freetype_install = join(self.get_build_dir(arch.arch), 'install')
+
+            env['HARFBUZZ_CFLAGS'] = '-I{harfbuzz} -I{harfbuzz}/src'.format(
+                harfbuzz=harfbuzz_build
+            )
+            env['HARFBUZZ_LIBS'] = (
+                '-L{freetype}/lib -lfreetype '
+                '-L{harfbuzz}/src/.libs -lharfbuzz'.format(
+                    freetype=freetype_install, harfbuzz=harfbuzz_build
+                )
+            )
+
+        # android's zlib support
+        zlib_lib_path = arch.ndk_lib_dir_versioned
+        zlib_includes = self.ctx.ndk.sysroot_include_dir
+
+        def add_flag_if_not_added(flag, env_key):
+            if flag not in env[env_key]:
+                env[env_key] += flag
+
+        add_flag_if_not_added(' -I' + zlib_includes, 'CFLAGS')
+        add_flag_if_not_added(' -L' + zlib_lib_path, 'LDFLAGS')
+        add_flag_if_not_added(' -lz', 'LDLIBS')
+
+        return env
+
+    def build_arch(self, arch, with_harfbuzz=False):
+        env = self.get_recipe_env(arch, with_harfbuzz=with_harfbuzz)
+
+        harfbuzz_in_recipes = 'harfbuzz' in self.ctx.recipe_build_order
+        prefix_path = self.get_build_dir(arch.arch)
+        if harfbuzz_in_recipes and not with_harfbuzz:
+            prefix_path = join(prefix_path, 'install')
+
+        config_args = {
+            '--host={}'.format(arch.command_prefix),
+            '--prefix={}'.format(prefix_path),
+            '--without-bzip2',
+            '--without-brotli',
+            '--with-png=no',
+        }
+        if not harfbuzz_in_recipes:
+            info('Build freetype (without harfbuzz)')
+            config_args = config_args.union(
+                {'--disable-static',
+                 '--enable-shared',
+                 '--with-harfbuzz=no',
+                 '--with-zlib=yes',
+                 }
+            )
+        elif not with_harfbuzz:
+            info('Build freetype for First time (without harfbuzz)')
+            config_args = config_args.union(
+                {'--disable-shared', '--with-harfbuzz=no', '--with-zlib=no'}
+            )
+        else:
+            info('Build freetype for Second time (with harfbuzz)')
+            config_args = config_args.union(
+                {'--disable-static',
+                 '--enable-shared',
+                 '--with-harfbuzz=yes',
+                 '--with-zlib=yes',
+                 }
+            )
+        info('Configure args are:\n\t-{}'.format('\n\t-'.join(config_args)))
+
+        with current_directory(self.get_build_dir(arch.arch)):
+            configure = sh.Command('./configure')
+            shprint(configure, *config_args, _env=env)
+            shprint(sh.make, '-j', str(cpu_count()), _env=env)
+
+            if not with_harfbuzz and harfbuzz_in_recipes:
+                info('Installing freetype (first time build without harfbuzz)')
+                shprint(sh.make, 'install', _env=env)
+                shprint(sh.make, 'distclean', _env=env)
+
+    def install_libraries(self, arch):
+        if not exists(list(self.get_libraries(arch))[0]):
+            return
+        self.install_libs(arch, *self.get_libraries(arch))
+
+
+recipe = FreetypeRecipe()
