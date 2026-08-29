@@ -289,7 +289,13 @@ class ClientScreen(MDScreen):
         fields["quote_data"] = self._collect_quote_data()
         if self.current_project_id is None:
             if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
-                show_paywall(self, reason="Free tier limited to 3 saved projects.")
+                show_paywall(
+                    self,
+                    reason=(
+                        f"Free tier limited to {database.FREE_PROJECT_LIMIT} saved projects. "
+                        "Delete an old one from the project list to keep going without upgrading."
+                    ),
+                )
                 return False
             self.current_project_id = database.create_project(fields)
         else:
@@ -304,7 +310,13 @@ class ClientScreen(MDScreen):
             self._show_message("No Project", "Save the current project before duplicating it.")
             return
         if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
-            show_paywall(self, reason="Free tier limited to 3 saved projects.")
+            show_paywall(
+                self,
+                reason=(
+                    f"Free tier limited to {database.FREE_PROJECT_LIMIT} saved projects. "
+                    "Delete an old one from the project list to keep going without upgrading."
+                ),
+            )
             return
         new_id = database.duplicate_project(self.current_project_id)
         row = database.get_project(new_id)

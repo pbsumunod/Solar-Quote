@@ -128,6 +128,14 @@ class SolarClientFinderApp(MDApp):
 
         self._show_onboarding = show_onboarding
         self._screen_manager = LoadingScreenManager()
+        # Play Billing callbacks (a purchase completing, a trial being
+        # confirmed) land asynchronously, on whatever thread pyjnius delivers
+        # them on -- not necessarily Kivy's main thread -- and can arrive
+        # well after this screen manager already exists and is on screen.
+        # Without this, the persistent plan label would keep showing "Free"
+        # after a real purchase until the user happened to navigate
+        # somewhere that re-reads the tier on its own (e.g. About).
+        self.billing.on_tier_changed = self._on_billing_tier_changed
 
         self._plan_label = MDLabel(
             text="Free",
@@ -181,6 +189,12 @@ class SolarClientFinderApp(MDApp):
 
     def _on_screen_change(self, _inst, screen_name: str) -> None:
         self._plan_label.opacity = 1 if screen_name in self.MAIN_SCREENS else 0
+
+    def _on_billing_tier_changed(self) -> None:
+        """billing.py calls this after a confirmed Play purchase changes the
+        tier. May be called from a non-Kivy thread, so touch no widgets here
+        directly -- schedule the actual refresh onto Kivy's main thread."""
+        Clock.schedule_once(lambda _dt: self._screen_manager.refresh_plan_label())
 
 
 if __name__ == "__main__":

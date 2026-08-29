@@ -695,20 +695,45 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
 
     def _start_trial(*_args):
         dialog.dismiss()
-        if billing:
-            billing.start_trial()
+        from kivy.utils import platform
+
+        if billing and platform == "android":
+            # Routed through a real Google Play purchase (of the monthly
+            # plan) rather than granted locally: a locally-granted trial has
+            # no way to stop someone from just reinstalling the app to get
+            # another one, since nothing here is tied to their Google
+            # account. Play's own trial phase (configured on the monthly
+            # subscription's base plan in Play Console) is tracked
+            # server-side per account, so Play itself refuses to grant the
+            # same account a second free trial on this subscription -- that
+            # actually closes the loophole. The trial-vs-already-billed
+            # terms are shown by Play's own purchase sheet, not this dialog;
+            # granting Pro access happens asynchronously once Play reports
+            # the resulting purchase back (see billing.py's
+            # PurchasesUpdatedListener), not synchronously here.
+            billing.launch_purchase("solarquote_pro_monthly")
+            _show_simple_message(
+                "Continue in Google Play",
+                "Finish setting up your subscription in the Google Play sheet "
+                "that just opened -- it'll show your free trial terms before "
+                "anything is charged.",
+            )
         else:
+            # Non-Android (desktop dev/testing) or billing unavailable: no
+            # Play account to tie a real trial to, so fall back to a purely
+            # local grant. This path can't defend against a reinstall, but
+            # it's also never reachable by a real Play Store user.
             from datetime import timedelta
             end = database.get_trusted_today() + timedelta(days=7)
             database.set_trial_end(end.isoformat())
             database.set_pro_source("trial")
             database.set_tier("pro")
-        _refresh_all_labels()
-        _show_simple_message(
-            "Trial Started",
-            "Your 7-day free trial has started!\n\n"
-            "All Pro features are now unlocked.",
-        )
+            _refresh_all_labels()
+            _show_simple_message(
+                "Trial Started",
+                "Your 7-day free trial has started!\n\n"
+                "All Pro features are now unlocked.",
+            )
 
     def _subscribe_monthly(*_args):
         dialog.dismiss()

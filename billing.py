@@ -87,6 +87,15 @@ class BillingManager:
         # silently dropping the callback. Stored here rather than as local
         # variables in the methods that create them.
         self._listeners = {}
+        # Optional callback the app can set (see main.py): called with no
+        # args whenever a confirmed Play purchase changes the tier, so
+        # always-visible UI (the persistent plan label) can refresh itself
+        # without the user having to navigate somewhere that happens to
+        # re-read the tier on its own. May fire from a non-Kivy thread --
+        # this class does not assume anything about which thread calls it,
+        # so the callback itself is responsible for getting back onto
+        # Kivy's main thread before touching any widget.
+        self.on_tier_changed = None
 
     # ------------------------------------------------------------------
     # Initialization
@@ -222,12 +231,18 @@ class BillingManager:
             # A confirmed real purchase always wins over -- and clears -- any
             # leftover trial state, so a subscriber is never later downgraded
             # by an old trial_end date (see database.get_tier()).
+            was_pro = self._is_pro
             self._is_pro = True
             database.set_pro_source("purchase")
             database.set_trial_end(None)
             self._save_tier_to_db(True)
             if not active_purchase.isAcknowledged():
                 self._acknowledge(active_purchase)
+            if not was_pro and self.on_tier_changed:
+                try:
+                    self.on_tier_changed()
+                except Exception as exc:
+                    log.warning("on_tier_changed callback failed: %s", exc)
         else:
             self._load_cached_tier()
 
