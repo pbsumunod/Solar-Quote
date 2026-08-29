@@ -1,9 +1,12 @@
+import logging
+
 from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.metrics import dp
 from kivy.properties import StringProperty
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
+from kivy.utils import platform
 from kivymd.app import MDApp
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
@@ -25,6 +28,51 @@ from screens.roi_screen import RoiScreen
 from screens.simulation_screen import SimulationScreen
 from screens.solar_screen import SolarScreen
 from screens.system_design_screen import SystemDesignScreen
+
+log = logging.getLogger(__name__)
+
+
+def _android_system_bar_insets() -> tuple:
+    """(top_dp, bottom_dp) padding needed to clear the status bar and
+    navigation bar on Android.
+
+    Apps targeting API 35 (Android 15) get edge-to-edge display enforced
+    unconditionally -- content draws behind the system bars whether the app
+    asked for it or not. A previous version of this code assumed a manifest
+    attribute could opt back out of that; checked directly against Android's
+    edge-to-edge developer guide, there is no such opt-out. Apps must handle
+    insets themselves, full stop. Kivy 2.3/KivyMD 1.2 have no built-in
+    WindowInsets support, so this reads the system bar dimensions directly
+    from Android's own resources (the same values the OS itself uses to
+    reserve that space) and the caller pads the root layout by that amount.
+
+    This is a one-time query at startup, not a live WindowInsets listener --
+    good enough since the app is portrait-locked (orientation = portrait in
+    buildozer.spec) so these dimensions don't change mid-session on a given
+    device. Falls back to (0, 0) on non-Android or if anything goes wrong,
+    so a lookup failure just means no padding rather than a crash.
+    """
+    if platform != "android":
+        return 0, 0
+    try:
+        from jnius import autoclass
+
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        activity = PythonActivity.mActivity
+        resources = activity.getResources()
+        density = resources.getDisplayMetrics().density
+
+        def _dimen_dp(name: str) -> float:
+            res_id = resources.getIdentifier(name, "dimen", "android")
+            if res_id == 0:
+                return 0.0
+            return resources.getDimensionPixelSize(res_id) / density
+
+        return _dimen_dp("status_bar_height"), _dimen_dp("navigation_bar_height")
+    except Exception as exc:
+        log.warning("Could not read Android system bar insets: %s", exc)
+        return 0, 0
+
 
 # ui_style.keep_focused_field_visible() scrolls a focused field above the
 # Android keyboard by calling ScrollView.scroll_to() -- but that can only
@@ -177,6 +225,8 @@ class SolarClientFinderApp(MDApp):
         self._screen_manager.refresh_plan_label()
 
         root = AppRoot(self._screen_manager)
+        top_inset, bottom_inset = _android_system_bar_insets()
+        root.padding = (0, dp(top_inset), 0, dp(bottom_inset))
         root.add_widget(self._plan_label)
 
         self._screen_manager.add_widget(StartupLoadingScreen())

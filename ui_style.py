@@ -811,9 +811,28 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
         MDFlatButton(text="Subscribe Yearly", text_color=ACCENT, on_release=_subscribe_yearly),
     )
 
-    dialog = MDDialog(
-        title="Upgrade to Pro",
-        text=text,
-        buttons=buttons,
-    )
+    # MDDialog's own `buttons=` layout (button_box) is a single horizontal
+    # row sized to fit its children's natural width, with no wrapping --
+    # fine for one or two short buttons, but with up to four ("Not Now",
+    # "Start Free Trial", "Subscribe Monthly", "Subscribe Yearly") it grows
+    # far wider than MDDialog's own 280dp mobile width cap and overflows the
+    # card. Same fix as the export-success dialog: build the content
+    # ourselves as one button per row, each full-width, via type="custom".
+    content = MDBoxLayout(orientation="vertical", spacing=dp(12), padding=dp(4), size_hint_y=None)
+    text_label = MDLabel(text=text, theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None)
+    text_label.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
+    text_label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1]))
+    content.add_widget(text_label)
+
+    btn_col = MDBoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
+    for btn in buttons:
+        btn.size_hint_x = 1
+        btn.size_hint_y = None
+        btn.height = dp(44)
+        btn_col.add_widget(btn)
+    btn_col.bind(minimum_height=btn_col.setter("height"))
+    content.add_widget(btn_col)
+    content.bind(minimum_height=content.setter("height"))
+
+    dialog = MDDialog(title="Upgrade to Pro", type="custom", content_cls=content)
     dialog.open()
