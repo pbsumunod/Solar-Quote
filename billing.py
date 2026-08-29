@@ -165,11 +165,24 @@ class BillingManager:
         # subscription this app sells needs it to actually be purchasable,
         # so it's still called unconditionally here -- not a mandatory
         # build() precondition, just a real functional requirement.
+        # enableOneTimeProducts() -- matches Google's own official
+        # subscriptions sample (play-billing-samples/subscriptions)
+        # verbatim, even though this app sells no one-time products: an
+        # empty PendingPurchasesParams isn't a documented, confirmed-valid
+        # config, and the sample calls this unconditionally, so matching it
+        # exactly removes the guesswork rather than trusting an assumption
+        # that empty params would also work.
         pending_params = _stage(
-            "PendingPurchasesParams.newBuilder().build()",
-            lambda: PendingPurchasesParams.newBuilder().build(),
+            "PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()",
+            lambda: PendingPurchasesParams.newBuilder().enableOneTimeProducts().build(),
         )
         builder = _stage("builder.enablePendingPurchases", lambda: builder.enablePendingPurchases(pending_params))
+        # Also from the official sample, and directly relevant to the
+        # "not_connected" failures this is fixing: opts into the Billing
+        # Library automatically reconnecting to the Play Store service if
+        # the connection drops, instead of silently staying disconnected
+        # until something explicitly calls startConnection() again.
+        builder = _stage("builder.enableAutoServiceReconnection", builder.enableAutoServiceReconnection)
         self._billing_client = _stage("builder.build", builder.build)
 
         self._connect()
@@ -357,11 +370,20 @@ class BillingManager:
         except Exception as exc:
             log.warning("queryProductDetailsAsync failed: %s", exc)
 
-    def _on_product_details(self, billing_result, product_details_list) -> None:
-        if billing_result.getResponseCode() != _RESPONSE_OK or product_details_list is None:
+    def _on_product_details(self, billing_result, query_result) -> None:
+        if billing_result.getResponseCode() != _RESPONSE_OK or query_result is None:
             log.warning("Product details fetch failed: %s", billing_result.getDebugMessage())
             return
         try:
+            # query_result is a QueryProductDetailsResult (Billing Library
+            # 8.0+), not the plain List<ProductDetails> older versions
+            # passed directly -- unwrap it. Any product listed in
+            # getUnfetchedProductList() (e.g. a product ID with no active
+            # base plan in Play Console) simply won't appear in
+            # self._product_details afterward, which launch_purchase()
+            # already treats as "not ready yet" -- no separate handling
+            # needed for the unfetched list itself.
+            product_details_list = query_result.getProductDetailsList()
             for i in range(product_details_list.size()):
                 details = product_details_list.get(i)
                 offers = details.getSubscriptionOfferDetails()
@@ -606,9 +628,17 @@ def _lazy_pyjnius_classes():
             self._manager = manager
             self._callback = callback
 
-        @java_method(_billing_result_sig("Ljava/util/List;"))
-        def onProductDetailsResponse(self, billing_result, product_details_list):
-            self._callback(billing_result, product_details_list)
+        # Billing Library 8.0 changed this callback's second parameter from
+        # a plain List<ProductDetails> to a QueryProductDetailsResult
+        # wrapper (adds getUnfetchedProductList() alongside
+        # getProductDetailsList(), so a query can report which products
+        # failed to resolve instead of just silently omitting them) --
+        # confirmed against the current API reference, not assumed. The
+        # JNI signature has to match the wrapper type or this callback
+        # simply never fires.
+        @java_method(_billing_result_sig("Lcom/android/billingclient/api/QueryProductDetailsResult;"))
+        def onProductDetailsResponse(self, billing_result, query_result):
+            self._callback(billing_result, query_result)
 
     class AcknowledgeListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/AcknowledgePurchaseResponseListener"]

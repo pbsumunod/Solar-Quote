@@ -9,7 +9,7 @@ source.exclude_dirs = tests, assets/icon, assets/splash
 source.exclude_patterns = p4a_hooks.py
 
 # versionName (cosmetic, shown to users -- bump however you like)
-version = 0.1.4
+version = 0.1.5
 
 # versionCode (invisible to users, but must strictly increase on EVERY
 # upload to Play Console, across every track, forever -- once a number is
@@ -24,7 +24,7 @@ version = 0.1.4
 # highest one it's seen so far (p4a's auto-derived code, used by the
 # API-34 build you already uploaded), and it will reject anything at or
 # below that -- this is the smallest value that clears it.
-android.numeric_version = 1024104
+android.numeric_version = 1024105
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
 
 orientation = portrait
@@ -49,15 +49,21 @@ android.build_tools = 35.0.0
 android.enable_androidx = True
 p4a.hook = ./p4a_hooks.py
 # com.android.billingclient:billing is Google Play Billing Library, used by
-# billing.py for Pro subscriptions -- it was missing entirely before, so
-# every autoclass("com.android.billingclient...") call in that file would
-# have thrown ClassNotFoundException at runtime (caught there, so it failed
-# quiet rather than crashing, but no purchase could ever have gone through).
-# Check https://developer.android.com/google/play/billing/release-notes for
-# a newer version before this one goes stale -- Google has changed this
-# library's API shape across majors (billing.py targets the 6.x,
-# ProductDetails-based API; the older SkuDetails-based API is deprecated).
-android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:6.2.1
+# billing.py for Pro subscriptions. Was pinned to 6.2.1 -- which does NOT
+# have PendingPurchasesParams (that class was introduced in 7.0.0), but
+# billing.py's enablePendingPurchases() call requires it. That mismatch
+# produced a runtime ClassNotFoundException on-device (caught, so it failed
+# quiet as "Could not connect to Google Play Billing" rather than crashing,
+# confirmed via `adb logcat`) -- every purchase attempt was silently DOA.
+# Bumped to 9.1.0: confirmed via Android's Billing Library release notes
+# that Google requires version 8+ for all new apps/updates by Aug 31, 2026,
+# and cross-checked every API billing.py uses against the current reference
+# docs at this version (see billing.py's own comments on
+# ProductDetailsResponseListener specifically, which changed shape in 8.0).
+# Check https://developer.android.com/google/play/billing/release-notes
+# before bumping this further -- past changes have altered method
+# signatures, not just added new ones.
+android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:9.1.0
 android.res_xml = android_res/file_paths.xml
 
 # Play Console requires an Android App Bundle (.aab) for new app uploads, not
