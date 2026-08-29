@@ -8,7 +8,23 @@ source.include_exts = py,png,jpg,kv,atlas
 source.exclude_dirs = tests, assets/icon, assets/splash
 source.exclude_patterns = p4a_hooks.py
 
-version = 0.1.0
+# versionName (cosmetic, shown to users -- bump however you like)
+version = 0.1.1
+
+# versionCode (invisible to users, but must strictly increase on EVERY
+# upload to Play Console, across every track, forever -- once a number is
+# used it can never be reused, even for a deleted release). Left unset,
+# python-for-android auto-derives one from `version` above, which is what
+# produced a collision here: the API-34 and API-35 builds both had
+# version=0.1.0, so both got the identical auto-derived versionCode, and
+# Play Console rejected the second upload as a dupe.
+# Bump this by at least 1 before every new build you intend to upload
+# anywhere in Play Console, regardless of what `version` says. Starting at
+# 1024101, not 1: Play Console's error already told us 1024100 is the
+# highest one it's seen so far (p4a's auto-derived code, used by the
+# API-34 build you already uploaded), and it will reject anything at or
+# below that -- this is the smallest value that clears it.
+android.numeric_version = 1024101
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
 
 orientation = portrait
