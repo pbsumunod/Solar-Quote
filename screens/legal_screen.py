@@ -19,7 +19,7 @@ from kivymd.uix.screen import MDScreen
 from screens.about_screen import CONTACT_EMAIL
 from ui_style import ON_SURFACE, screen_header
 
-LEGAL_LAST_UPDATED = "August 23, 2026"
+LEGAL_LAST_UPDATED = "August 29, 2026"
 
 TERMS_OF_SERVICE = f"""Last updated: {LEGAL_LAST_UPDATED}
 
@@ -27,7 +27,7 @@ TERMS_OF_SERVICE = f"""Last updated: {LEGAL_LAST_UPDATED}
 By installing or using SolarQuote ("the App"), you agree to these Terms of Service. If you do not agree, do not use the App.
 
 2. What the App Does
-SolarQuote is an offline tool for solar installers to size systems, run financial projections, and generate client-facing proposals (PDF, Excel, CSV, and PowerPoint). All calculations happen on your device; the App does not connect to the internet or to any SumClarTech server.
+SolarQuote is a tool for solar installers to size systems, run financial projections, and generate client-facing proposals (PDF, Excel, CSV, and PowerPoint). All calculations happen on your device, and the App never sends your client or project data to any SumClarTech server. It does make two limited network requests unrelated to your data -- see the Privacy Policy for details.
 
 3. Estimates Only, No Warranty
 Every figure the App produces -- sizing, savings, ROI, and payback -- is an engineering estimate based on the information and assumptions you provide. Actual solar production, electricity consumption, weather conditions, equipment specifications, installation conditions, and utility requirements may differ. Final system designs must be verified and signed off by a qualified solar or electrical professional before being presented as final to a client. SumClarTech makes no warranty, express or implied, as to the accuracy, completeness, or fitness of any output for a particular purpose.
@@ -56,7 +56,7 @@ Questions about these Terms can be sent to {CONTACT_EMAIL}."""
 PRIVACY_POLICY = f"""Last updated: {LEGAL_LAST_UPDATED}
 
 1. Overview
-SolarQuote is built to work fully offline. This policy explains what information the App stores and, just as importantly, what it does not do with it.
+SolarQuote's core features -- sizing, simulation, and report generation -- work fully offline. This policy explains what information the App stores, the few things it does send over a network, and just as importantly, what it does not do with your data.
 
 2. Information Stored on Your Device
 When you create a client project, the App stores what you enter -- client name, contact number, email, project location, notes, energy usage, tariff, and the resulting system-design and simulation figures -- in a local database inside the App's private storage on your device. This information never leaves your device unless you choose to share it (see below).
@@ -65,24 +65,30 @@ When you create a client project, the App stores what you enter -- client name, 
 PDF, Excel, CSV, and PowerPoint proposals you export are saved to the App's own folder on your device. They are only shared, emailed, or sent anywhere if you actively choose to using the App's Share or Email to Client buttons, which hand the file to your own device's apps (your email client, messaging apps, etc.) -- SumClarTech does not receive a copy.
 
 4. No Data Collection by Us
-The App has no server, no user accounts, no analytics, no advertising, and no third-party tracking SDKs. SumClarTech does not collect, receive, or have access to any client information, project data, or exported files you create in the App.
+SumClarTech does not collect, receive, or have access to any client information, project data, or exported files you create in the App. There are no user accounts, no analytics, and no advertising or tracking SDKs of any kind.
 
-5. Data Control and Deletion
+5. Network Requests the App Does Make
+Two features require a network connection, and neither involves your client or project data:
+- Date verification: to keep free-trial timing accurate even if a device's clock is changed, the App checks the current date against a public time service (worldtimeapi.org). This request carries no personal or client information -- only a request for the current time.
+- Subscription purchases: upgrading to Pro is processed through Google Play Billing, operated by Google, not SumClarTech. Payment details and subscription status are handled entirely by Google Play; SumClarTech never receives your payment information, only whether a subscription is active.
+Every other feature -- system sizing, simulation, and report generation -- works fully offline and makes no network request.
+
+6. Data Control and Deletion
 You can delete any saved project from within the App at any time. Uninstalling the App permanently deletes its local database and all exported files stored in its folder from your device.
 
-6. Third-Party Services
-The App does not integrate with any third-party analytics, advertising, or cloud services.
+7. Third-Party Services
+Beyond the two network requests described above, the App does not integrate with any third-party analytics, advertising, or cloud services.
 
-7. Children's Privacy
+8. Children's Privacy
 The App is a professional tool for solar installers and is not directed at children. SumClarTech does not knowingly collect information from children.
 
-8. Your Role as the Data Controller
+9. Your Role as the Data Controller
 The client information you enter (name, contact number, email, and project location) is your own client's personal data, collected by you in the course of your business. Because the App stores this data only on your device and never transmits it to SumClarTech, you -- not SumClarTech -- act as the data controller for that information under the Philippines' Data Privacy Act of 2012 (Republic Act No. 10173), and are responsible for handling it in accordance with that law, including obtaining any consent from your clients that it requires.
 
-9. Changes to This Policy
+10. Changes to This Policy
 This policy may be updated from time to time to reflect changes in the App. The "Last updated" date above will reflect the most recent revision.
 
-10. Contact
+11. Contact
 Questions about this Privacy Policy can be sent to {CONTACT_EMAIL}."""
 
 
