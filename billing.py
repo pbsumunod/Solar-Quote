@@ -98,6 +98,40 @@ class BillingManager:
         self.on_tier_changed = None
 
     # ------------------------------------------------------------------
+    # Classloader fix
+    # ------------------------------------------------------------------
+
+    def _ensure_classloader(self) -> None:
+        """Point the CURRENT thread's context classloader at the Activity's
+        own classloader, which can see this app's bundled third-party
+        classes (like anything under com.android.billingclient.api.*) --
+        confirmed via `adb logcat` to be necessary, not a defensive guess:
+        constructing a PythonJavaClass for PurchasesUpdatedListener threw
+        "java.lang.IllegalArgumentException: interface
+        com.android.billingclient.api.PurchasesUpdatedListener is not
+        visible from class loader" without this. Root cause: a thread that
+        attaches to the JVM (which is what happens under pyjnius) gets the
+        bootstrap classloader by default, which only knows core
+        java.*/android.* framework classes.
+
+        Called at the top of every method that constructs a
+        PythonJavaClass, not just once at startup: Play Billing's own
+        callbacks (onBillingSetupFinished, onPurchasesUpdated, etc.) can
+        land on a different thread than the one that ran _init_android(),
+        most likely Android's actual UI thread rather than Kivy's own app
+        thread -- and that thread would hit the exact same error
+        independently the first time IT tries to construct a listener, if
+        this hadn't already been set for it. Cheap and idempotent, so
+        calling it defensively everywhere costs nothing.
+        """
+        try:
+            from jnius import autoclass
+            Thread = autoclass("java.lang.Thread")
+            Thread.currentThread().setContextClassLoader(self._activity.getClassLoader())
+        except Exception as exc:
+            log.warning("Could not set context classloader: %s", exc)
+
+    # ------------------------------------------------------------------
     # Initialization
     # ------------------------------------------------------------------
 
@@ -139,6 +173,11 @@ class BillingManager:
         PythonActivity = _stage("autoclass(PythonActivity)",
                                  lambda: autoclass("org.kivy.android.PythonActivity"))
         self._activity = _stage("PythonActivity.mActivity", lambda: PythonActivity.mActivity)
+
+        # See _ensure_classloader()'s docstring -- confirmed via `adb
+        # logcat` this is required before constructing any listener below,
+        # not a defensive guess.
+        _stage("_ensure_classloader", self._ensure_classloader)
 
         BillingClient = _stage(
             "autoclass(BillingClient)",
@@ -192,6 +231,7 @@ class BillingManager:
     # ------------------------------------------------------------------
 
     def _connect(self) -> None:
+        self._ensure_classloader()
         self._listeners["connect"] = _ConnectListener(self)
         self._billing_client.startConnection(self._listeners["connect"])
         # startConnection() doesn't raise on its own if the connection
@@ -236,6 +276,7 @@ class BillingManager:
             return
 
         try:
+            self._ensure_classloader()
             from jnius import autoclass
 
             QueryPurchasesParams = autoclass(
@@ -318,6 +359,7 @@ class BillingManager:
 
     def _acknowledge(self, purchase) -> None:
         try:
+            self._ensure_classloader()
             from jnius import autoclass
 
             AcknowledgePurchaseParams = autoclass(
@@ -340,6 +382,7 @@ class BillingManager:
         if not self._connected or not self._billing_client:
             return
         try:
+            self._ensure_classloader()
             from jnius import autoclass
 
             BillingClient = autoclass("com.android.billingclient.api.BillingClient")
