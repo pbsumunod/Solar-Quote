@@ -63,7 +63,18 @@ p4a.hook = ./p4a_hooks.py
 # Check https://developer.android.com/google/play/billing/release-notes
 # before bumping this further -- past changes have altered method
 # signatures, not just added new ones.
-android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:9.1.0
+#
+# The kotlin-stdlib-jdk7/jdk8 pins below fix a Gradle "Duplicate class"
+# failure that Billing Library 9.1.0 introduced: kotlin-stdlib-jdk7/jdk8
+# were separate artifacts before Kotlin 1.8, merged into plain kotlin-stdlib
+# in 1.8+ (the split artifacts still exist post-1.8, but only as
+# near-empty compatibility stubs). Billing 9.1.0 pulls kotlin-stdlib:1.8.22
+# directly, but something else in the dependency graph pulls the old
+# kotlin-stdlib-jdk7/jdk8:1.6.21 split artifacts, which still contain the
+# real (now-duplicated) classes. Pinning these to a matching 1.8.x version
+# lets Gradle's ordinary highest-version-wins resolution upgrade that old
+# reference to the harmless post-merge stub instead.
+android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:9.1.0,org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22,org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22
 android.res_xml = android_res/file_paths.xml
 
 # Play Console requires an Android App Bundle (.aab) for new app uploads, not
