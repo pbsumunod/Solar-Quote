@@ -113,34 +113,64 @@ class BillingManager:
 
         try:
             self._init_android()
-        except Exception as exc:
-            log.warning("Billing init failed: %s", exc)
+        except Exception:
+            # _init_android() logs exactly which construction step failed
+            # before re-raising -- this outer catch is only the final,
+            # generic fallback so a broken billing setup degrades to cached
+            # tier instead of crashing the app.
+            log.exception("Billing init failed")
             self._load_cached_tier()
 
     def _init_android(self) -> None:
+        # Every step below is its own try/except so a failure log names the
+        # exact stage instead of a single "something in _init_android broke"
+        # message with no way to tell which of six calls actually threw --
+        # this is otherwise impossible to debug without a full logcat
+        # session, and even then buried in noise.
+        def _stage(name, fn):
+            try:
+                return fn()
+            except Exception:
+                log.exception("Billing init failed at stage: %s", name)
+                raise
+
         from jnius import autoclass
 
-        PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        self._activity = PythonActivity.mActivity
+        PythonActivity = _stage("autoclass(PythonActivity)",
+                                 lambda: autoclass("org.kivy.android.PythonActivity"))
+        self._activity = _stage("PythonActivity.mActivity", lambda: PythonActivity.mActivity)
 
-        BillingClient = autoclass("com.android.billingclient.api.BillingClient")
-        PendingPurchasesParams = autoclass(
-            "com.android.billingclient.api.PendingPurchasesParams"
+        BillingClient = _stage(
+            "autoclass(BillingClient)",
+            lambda: autoclass("com.android.billingclient.api.BillingClient"),
+        )
+        PendingPurchasesParams = _stage(
+            "autoclass(PendingPurchasesParams)",
+            lambda: autoclass("com.android.billingclient.api.PendingPurchasesParams"),
         )
 
         # PurchasesUpdatedListener is set once, at build time -- it's how
         # Play reports the result of every launchBillingFlow() call, not
         # something queried per-purchase like the other listeners below.
-        self._listeners["purchases_updated"] = _PurchasesUpdatedListener(self)
+        self._listeners["purchases_updated"] = _stage(
+            "construct PurchasesUpdatedListener", lambda: _PurchasesUpdatedListener(self),
+        )
 
-        builder = BillingClient.newBuilder(self._activity)
-        builder = builder.setListener(self._listeners["purchases_updated"])
-        # Mandatory since Billing Library 6 -- build() throws without it.
-        # This app only sells subscriptions (no one-time/consumable
-        # products), and pending-purchase support for subscriptions is
-        # covered without needing enableOneTimeProducts()/enablePrepaidPlans().
-        builder = builder.enablePendingPurchases(PendingPurchasesParams.newBuilder().build())
-        self._billing_client = builder.build()
+        builder = _stage("BillingClient.newBuilder", lambda: BillingClient.newBuilder(self._activity))
+        builder = _stage(
+            "builder.setListener", lambda: builder.setListener(self._listeners["purchases_updated"]),
+        )
+        # enablePendingPurchases() is documented as optional (only
+        # setListener() is required for build() to succeed) but every
+        # subscription this app sells needs it to actually be purchasable,
+        # so it's still called unconditionally here -- not a mandatory
+        # build() precondition, just a real functional requirement.
+        pending_params = _stage(
+            "PendingPurchasesParams.newBuilder().build()",
+            lambda: PendingPurchasesParams.newBuilder().build(),
+        )
+        builder = _stage("builder.enablePendingPurchases", lambda: builder.enablePendingPurchases(pending_params))
+        self._billing_client = _stage("builder.build", builder.build)
 
         self._connect()
 
@@ -151,6 +181,27 @@ class BillingManager:
     def _connect(self) -> None:
         self._listeners["connect"] = _ConnectListener(self)
         self._billing_client.startConnection(self._listeners["connect"])
+        # startConnection() doesn't raise on its own if the connection
+        # attempt just never completes -- onBillingSetupFinished/
+        # onBillingServiceDisconnected simply never fire, with nothing to
+        # except. That's indistinguishable from "still connecting" without
+        # a timeout, so this fires once, diagnostically, if a purchase gets
+        # attempted well after startConnection() with no callback ever
+        # having landed -- it doesn't retry or change behavior on its own.
+        import threading
+
+        def _check_stalled():
+            if not self._connected:
+                log.warning(
+                    "Billing startConnection() called but no "
+                    "onBillingSetupFinished/onBillingServiceDisconnected callback "
+                    "has fired after 10s -- either the PurchasesUpdatedListener/"
+                    "ConnectListener PythonJavaClass proxies aren't being "
+                    "recognized as valid Java interface implementations, or Play "
+                    "Store/Play Services isn't responding on this device."
+                )
+
+        threading.Timer(10.0, _check_stalled).start()
 
     def _on_connected(self) -> None:
         self._connected = True
