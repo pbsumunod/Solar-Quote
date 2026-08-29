@@ -19,11 +19,17 @@ android.presplash_color = #FDFCF8
 
 p4a.local_recipes = ./recipes
 
-android.api = 34
+# Play Console requires new/updated apps to target a recent API level (35 as
+# of this build) -- it flags anything older as a submission-blocking error,
+# not just a warning. This is a Play policy floor, not a hard requirement of
+# the code itself, so it moves up roughly yearly; re-check Play Console's
+# error message (it names the current minimum) if this ever gets flagged
+# again in the future.
+android.api = 35
 android.minapi = 24
 android.ndk = 25b
 android.archs = arm64-v8a
-android.build_tools = 34.0.0
+android.build_tools = 35.0.0
 android.enable_androidx = True
 p4a.hook = ./p4a_hooks.py
 # com.android.billingclient:billing is Google Play Billing Library, used by
