@@ -50,7 +50,7 @@ LOGO_PATH = "assets/images/logo.png"
 APP_VERSION = "0.1.0"  # keep in sync with buildozer.spec's version
 # Bumped by hand on each delivered build -- shown on the Report and About screens
 # so a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-08-21-k"
+BUILD_LABEL = "2026-08-30-a"
 
 STEP_NAMES = [
     "Client Info", "Consumption", "Solar Sizing", "Battery Sizing",
