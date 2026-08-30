@@ -609,6 +609,20 @@ class BillingManager:
 # method's JNI signature -- a plain Python class with matching method names
 # does NOT implement a Java interface as far as the JVM/JNI boundary is
 # concerned.
+#
+# __javacontext__ = "app" is equally required and easy to miss: pyjnius's
+# own create_proxy_instance() (jnius_proxy.pxi) defaults __javacontext__ to
+# "system" when a PythonJavaClass subclass doesn't set it, which builds the
+# interface proxy against ClassLoader.getSystemClassLoader() -- a
+# classloader with no visibility into third-party, app-bundled classes like
+# anything under com.android.billingclient.api.*. Confirmed via `adb
+# logcat`: without this, every listener construction below threw
+# "java.lang.IllegalArgumentException: interface ... is not visible from
+# class loader", and setting the thread's context classloader
+# (BillingManager._ensure_classloader()) alone did NOT fix it, because the
+# default "system" mode never even reads that -- only "app" mode does
+# (Thread.currentThread().getContextClassLoader(), which is exactly what
+# _ensure_classloader() sets). Both pieces are required together.
 # ----------------------------------------------------------------------
 
 def _billing_result_sig(*rest: str) -> str:
@@ -623,6 +637,7 @@ def _lazy_pyjnius_classes():
 
     class ConnectListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/BillingClientStateListener"]
+        __javacontext__ = "app"
 
         def __init__(self, manager):
             super().__init__()
@@ -642,6 +657,7 @@ def _lazy_pyjnius_classes():
 
     class PurchasesUpdatedListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/PurchasesUpdatedListener"]
+        __javacontext__ = "app"
 
         def __init__(self, manager):
             super().__init__()
@@ -653,6 +669,7 @@ def _lazy_pyjnius_classes():
 
     class PurchasesResponseListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/PurchasesResponseListener"]
+        __javacontext__ = "app"
 
         def __init__(self, manager, callback):
             super().__init__()
@@ -665,6 +682,7 @@ def _lazy_pyjnius_classes():
 
     class ProductDetailsResponseListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/ProductDetailsResponseListener"]
+        __javacontext__ = "app"
 
         def __init__(self, manager, callback):
             super().__init__()
@@ -685,6 +703,7 @@ def _lazy_pyjnius_classes():
 
     class AcknowledgeListener(PythonJavaClass):
         __javainterfaces__ = ["com/android/billingclient/api/AcknowledgePurchaseResponseListener"]
+        __javacontext__ = "app"
 
         @java_method(_billing_result_sig())
         def onAcknowledgePurchaseResponse(self, billing_result):

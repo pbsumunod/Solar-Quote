@@ -9,7 +9,7 @@ source.exclude_dirs = tests, assets/icon, assets/splash
 source.exclude_patterns = p4a_hooks.py
 
 # versionName (cosmetic, shown to users -- bump however you like)
-version = 0.1.6
+version = 0.1.7
 
 # versionCode (invisible to users, but must strictly increase on EVERY
 # upload to Play Console, across every track, forever -- once a number is
@@ -24,7 +24,7 @@ version = 0.1.6
 # highest one it's seen so far (p4a's auto-derived code, used by the
 # API-34 build you already uploaded), and it will reject anything at or
 # below that -- this is the smallest value that clears it.
-android.numeric_version = 1024106
+android.numeric_version = 1024107
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
 
 orientation = portrait
