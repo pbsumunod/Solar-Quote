@@ -24,7 +24,6 @@ from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
 
 from db import database
-from logic.geo_data import COUNTRY_LATITUDES
 from logic.models import Project
 from ui_style import (
     ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, header_actions, keep_focused_field_visible, m3_field, picker_field, primary_button, save_button, save_current_project,
@@ -47,12 +46,13 @@ class ClientScreen(MDScreen):
         self.name = "client"
         self.current_project_id: int | None = None
         self._daytime_pct = 70
+        # Fixed: SolarQuote is Philippines-only, so this is never reassigned
+        # by the UI (see the country_field construction in _build_ui).
         self._country = "Philippines"
         self._dialog: MDDialog | None = None
         self._project_menu: MDDropdownMenu | None = None
         self._overflow_menu: MDDropdownMenu | None = None
         self._ratio_menu: MDDropdownMenu | None = None
-        self._country_menu: MDDropdownMenu | None = None
 
         self._build_ui()
         self._new_project()
@@ -81,10 +81,14 @@ class ClientScreen(MDScreen):
         client_card.add_widget(self.client_name_field)
         client_card.add_widget(self.project_location_field)
 
-        self.country_field = picker_field("earth", "Country", "Philippines", self._open_country_menu)
+        # Fixed, non-editable: SolarQuote is scoped to Philippines-only for now
+        # (electricity rates, currency, and every financial figure in the app
+        # are PHP-denominated with no per-country switching), so letting users
+        # pick a different country here would be misleading rather than useful.
+        self.country_field = m3_field("Country", icon="earth", text="Philippines", disabled=True)
         client_card.add_widget(self.country_field)
         client_card.add_widget(MDLabel(
-            text="Tap to search 150+ countries -- sets solar-harvest scaling",
+            text="SolarQuote is currently available for the Philippines only.",
             font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
             size_hint_y=None, height=dp(16),
         ))
@@ -135,20 +139,6 @@ class ClientScreen(MDScreen):
         self.ratio_field.set_value(f"{ratio.split('/')[0]}% / {ratio.split('/')[1]}%")
         if self._ratio_menu:
             self._ratio_menu.dismiss()
-
-    def _open_country_menu(self) -> None:
-        items = [
-            {"text": country, "on_release": lambda c=country: self._select_country(c)}
-            for country in sorted(COUNTRY_LATITUDES.keys())
-        ]
-        self._country_menu = MDDropdownMenu(caller=self.country_field, items=items, width_mult=4, max_height=dp(360))
-        self._country_menu.open()
-
-    def _select_country(self, country: str) -> None:
-        self._country = country
-        self.country_field.set_value(country)
-        if self._country_menu:
-            self._country_menu.dismiss()
 
     def _open_project_menu(self) -> None:
         items = [{"text": "(Unsaved new project)", "on_release": lambda: self._select_project(None)}]
@@ -207,8 +197,8 @@ class ClientScreen(MDScreen):
         self._daytime_pct = project.daytime_ratio_pct
         self.ratio_field.set_value(f"{project.daytime_ratio_pct}% / {project.nighttime_ratio_pct}%")
         self.electricity_rate_field.text = f"{project.electricity_rate:.2f}"
-        self._country = project.country
-        self.country_field.set_value(project.country or "Select Country")
+        # self._country stays "Philippines" regardless of what an older saved
+        # project recorded -- the country field is fixed now, not restored.
         self.current_project_id = project.id
         if project.id is not None:
             self.project_row_widget._value_label.text = f"{project.client_name} - {project.project_date}"
