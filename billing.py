@@ -282,10 +282,18 @@ class BillingManager:
             QueryPurchasesParams = autoclass(
                 "com.android.billingclient.api.QueryPurchasesParams"
             )
-            BillingClient = autoclass("com.android.billingclient.api.BillingClient")
 
+            # BillingClient.ProductType is a nested Java *interface*, not a
+            # field -- pyjnius's autoclass() doesn't expose nested
+            # classes/interfaces as plain attributes the way it does static
+            # fields, so `BillingClient.ProductType.SUBS` failed with
+            # "type object 'BillingClient' has no attribute 'ProductType'"
+            # (confirmed via `adb logcat`). setProductType() just takes the
+            # documented, stable literal string value directly ("subs" /
+            # "inapp") rather than adding another autoclass("...BillingClient
+            # $ProductType") lookup for one constant.
             params = (QueryPurchasesParams.newBuilder()
-                      .setProductType(BillingClient.ProductType.SUBS)
+                      .setProductType("subs")
                       .build())
             self._listeners["query_purchases"] = _PurchasesResponseListener(
                 self, self._on_purchases_queried
@@ -385,7 +393,6 @@ class BillingManager:
             self._ensure_classloader()
             from jnius import autoclass
 
-            BillingClient = autoclass("com.android.billingclient.api.BillingClient")
             QueryProductDetailsParams = autoclass(
                 "com.android.billingclient.api.QueryProductDetailsParams"
             )
@@ -394,12 +401,16 @@ class BillingManager:
             )
             ArrayList = autoclass("java.util.ArrayList")
 
+            # See _query_purchases()'s identical fix -- ProductType is a
+            # nested interface, not a field, so BillingClient.ProductType
+            # isn't accessible via autoclass() the way this originally
+            # assumed. "subs" is the documented, stable literal value.
             product_list = ArrayList()
             for product_id in _SUBSCRIPTION_PRODUCTS:
                 product_list.add(
                     Product.newBuilder()
                     .setProductId(product_id)
-                    .setProductType(BillingClient.ProductType.SUBS)
+                    .setProductType("subs")
                     .build()
                 )
 
