@@ -101,3 +101,12 @@ jobs:
           name: solarquote-debug-apk
           path: bin/*.apk
           if-no-files-found: error
+          # Artifacts count against an ACCOUNT-WIDE Actions storage quota,
+          # not a per-repo one. Left at the 90-day default these built up to
+          # ~2.4 GB here and exhausted the shared 500 MB allowance, which
+          # then failed builds in a DIFFERENT repository at the upload step,
+          # long after their packages had compiled successfully -- a failure
+          # that reads as a broken build with nothing wrong with the code.
+          # A debug APK is a hand-off: downloaded, installed, superseded by
+          # the next build. Three days is far more than it is ever needed for.
+          retention-days: 3
