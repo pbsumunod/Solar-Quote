@@ -117,3 +117,13 @@ jobs:
           name: solarquote-release-aab
           path: bin/*.aab
           if-no-files-found: error
+          # Artifacts count against an ACCOUNT-WIDE Actions storage quota,
+          # not a per-repo one. Left at the 90-day default these built up to
+          # ~2.4 GB here and exhausted the shared 500 MB allowance, which
+          # then failed builds in a DIFFERENT repository at the upload step,
+          # long after their packages had compiled successfully -- a failure
+          # that reads as a broken build with nothing wrong with the code.
+          # A release AAB is kept longer than the debug APK -- it is what gets
+          # uploaded to Play Console, so it is worth being able to re-fetch a
+          # recent one without rebuilding.
+          retention-days: 14
