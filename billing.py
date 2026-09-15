@@ -313,13 +313,10 @@ class BillingManager:
     def _process_purchases(self, purchases_list) -> None:
         """Process the list of purchases returned by Google Play.
 
-        Only ever used to *confirm* a real subscription, never to deny one:
-        Google Play has no record of a locally-tracked free trial (it isn't a
-        Play-billed product), so treating "no purchases found" as "downgrade
-        to Free" would kill an active trial the moment the app restarts on
-        Android, since this runs on every cold start. When no purchase is
-        found, defer entirely to database.get_tier(), which already knows how
-        to evaluate a still-running trial on its own.
+        A successful query is authoritative for Play-managed entitlements.
+        An empty result revokes a cached Play purchase, including a Play free
+        trial that ended without renewal. Local desktop trials are preserved.
+        Query errors never reach this method and continue to use the cache.
         """
         from db import database
 
@@ -357,7 +354,24 @@ class BillingManager:
                 except Exception as exc:
                     log.warning("on_tier_changed callback failed: %s", exc)
         else:
-            self._load_cached_tier()
+            source = database.get_pro_source()
+            if source == "trial":
+                was_pro = self._is_pro
+                self._load_cached_tier()
+                changed = was_pro != self._is_pro
+            else:
+                was_entitled = self._is_pro or database.get_tier() == "pro"
+                self._is_pro = False
+                database.set_tier("free")
+                database.set_pro_source(None)
+                database.set_trial_end(None)
+                changed = was_entitled
+
+            if changed and self.on_tier_changed:
+                try:
+                    self.on_tier_changed()
+                except Exception as exc:
+                    log.warning("on_tier_changed callback failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Acknowledgement -- Google auto-refunds any subscription purchase not

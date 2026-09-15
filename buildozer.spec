@@ -13,7 +13,7 @@ source.exclude_patterns = p4a_hooks.py
 # before this was internal iteration/debugging (Play Billing fixes, edge-to-
 # edge layout, etc.), not a milestone worth exposing to testers -- this is
 # meant to read as the actual "first release" version.
-version = 0.1.0
+version = 1.0.0
 
 # versionCode (invisible to users, but must strictly increase on EVERY
 # upload to Play Console, across every track, forever -- once a number is
@@ -28,7 +28,7 @@ version = 0.1.0
 # has already seen numeric_version values up through 1024109 from this
 # session's internal-testing uploads, so this closed-testing release must
 # clear that even though `version` itself reset to 0.1.0.
-android.numeric_version = 1024110
+android.numeric_version = 1024111
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
 
 orientation = portrait

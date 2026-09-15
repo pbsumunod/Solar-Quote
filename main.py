@@ -32,6 +32,27 @@ from screens.system_design_screen import SystemDesignScreen
 log = logging.getLogger(__name__)
 
 
+def _restore_android_system_bar_defaults() -> None:
+    """Use dark system controls on the app's light system-bar surfaces."""
+    if platform != "android":
+        return
+    try:
+        from jnius import autoclass
+
+        PythonActivity = autoclass("org.kivy.android.PythonActivity")
+        decor_view = PythonActivity.mActivity.getWindow().getDecorView()
+        View = autoclass("android.view.View")
+        flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        BuildVersion = autoclass("android.os.Build$VERSION")
+        if BuildVersion.SDK_INT >= 26:
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+        decor_view.setSystemUiVisibility(
+            decor_view.getSystemUiVisibility() | flags
+        )
+    except Exception as exc:
+        log.warning("Could not restore Android system-bar appearance: %s", exc)
+
+
 def _android_system_bar_insets() -> tuple:
     """(top_dp, bottom_dp) padding needed to clear the status bar and
     navigation bar on Android.
@@ -181,6 +202,7 @@ class AppRoot(BoxLayout):
 class SolarClientFinderApp(MDApp):
     def build(self):
         self.title = "SolarQuote"
+        _restore_android_system_bar_defaults()
         self.state = AppState()
         self.billing = BillingManager()
         database.configure(self.user_data_dir)
