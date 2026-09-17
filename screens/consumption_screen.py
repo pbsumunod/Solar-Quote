@@ -15,6 +15,8 @@ from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDFlatButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
@@ -26,6 +28,7 @@ from logic.calculations import (
     hourly_kwh_from_percentages,
     split_day_night_kwh,
 )
+from logic.quote_validation import validate_hourly_profile
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
     about_button, framed_label, go_home, header_actions, icon_button, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
@@ -276,7 +279,7 @@ class ConsumptionScreen(MDScreen):
         try:
             self.hourly_pct[idx] = max(0.0, float(value))
         except ValueError:
-            return
+            self.hourly_pct[idx] = 0.0
         self._refresh_kwh_column()
         self._refresh_summary()
 
@@ -346,5 +349,14 @@ class ConsumptionScreen(MDScreen):
         app.root.current = "about"
 
     def _go_next(self) -> None:
+        error = validate_hourly_profile(self.hourly_pct)
+        if error:
+            dialog = MDDialog(
+                title="Invalid Load Profile", text=error,
+                buttons=[MDFlatButton(text="OK", text_color=ACCENT,
+                                      on_release=lambda *_: dialog.dismiss())],
+            )
+            dialog.open()
+            return
         app = MDApp.get_running_app()
         app.root.current = "solar"

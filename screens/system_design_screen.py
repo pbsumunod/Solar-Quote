@@ -22,6 +22,7 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
 
 from logic.calculations import INVERTER_KW_TIERS, required_inverter_kw, round_up_to_standard_size
+from logic.quote_validation import finite_float_or
 from ui_style import (
     ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
     tonal_button, warning_row, with_bg,
@@ -141,10 +142,7 @@ class SystemDesignScreen(MDScreen):
         self._recalculate_recommendation()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        try:
-            return float(field.text)
-        except ValueError:
-            return default
+        return finite_float_or(field.text, default)
 
     def _required_kw(self) -> float:
         return required_inverter_kw(self.peak_hourly_kwh, self.pv_capacity_kw)

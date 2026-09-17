@@ -188,6 +188,9 @@ class AppRoot(BoxLayout):
     def get_screen(self, name: str):
         return self._sm.get_screen(name)
 
+    def has_screen(self, name: str) -> bool:
+        return self._sm.has_screen(name)
+
     def _sync_current(self, _inst, value):
         self.current = value
 

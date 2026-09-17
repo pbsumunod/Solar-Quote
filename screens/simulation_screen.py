@@ -29,6 +29,7 @@ from kivymd.uix.textfield import MDTextField
 from logic.calculations import HOUR_LABELS, hourly_kwh_from_percentages
 from logic.chart_series import DOD_FLOOR_COLOR, SERIES_COLORS, series_for_result
 from logic.geo_data import latitude_for_country, solar_latitude_factor
+from logic.quote_validation import finite_float_or
 from logic.simulation import (
     DEFAULT_WEATHER_FACTORS,
     default_solar_harvest_pct,
@@ -224,10 +225,7 @@ class SimulationScreen(MDScreen):
         self.big_bg.stop()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        try:
-            return float(field.text)
-        except ValueError:
-            return default
+        return finite_float_or(field.text, default)
 
     def _run_for_factor(self, weather_factor_pct: float):
         solar = hourly_solar_kwh(

@@ -33,6 +33,7 @@ from logic.financial import (
     roi_percent,
     total_electricity_savings,
 )
+from logic.quote_validation import finite_float_or, validate_weather_mix
 from ui_style import (
     ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, go_home, header_actions, icon_button, m3_field, picker_field,
     keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
@@ -214,16 +215,19 @@ class RoiScreen(MDScreen):
         self._recalculate()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        try:
-            return float(field.text)
-        except ValueError:
-            return default
+        return finite_float_or(field.text, default)
 
     def _int(self, field: MDTextField, default: int = 1) -> int:
         try:
-            return max(1, int(field.text))
+            return min(50, max(1, int(field.text)))
         except ValueError:
             return default
+
+    def _raw_years(self) -> int:
+        try:
+            return int(self.years_field.text)
+        except ValueError:
+            return 0
 
     def _weather_mix_pct(self) -> dict:
         return {name: self._float(f, DEFAULT_WEATHER_MIX[name]) for name, f in self._mix_fields.items()}
@@ -322,7 +326,7 @@ class RoiScreen(MDScreen):
             "maintenance_pct": self._float(self.maintenance_pct_field, DEFAULT_MAINTENANCE_PCT),
             "maintenance_fixed": self._float(self.maintenance_fixed_field, DEFAULT_MAINTENANCE_FIXED),
             "maintenance_inflation_pct": self._float(self.maintenance_inflation_field, 0.0),
-            "years": self._int(self.years_field, DEFAULT_SIMULATION_YEARS),
+            "years": self._raw_years(),
             "system_cost": self._system_cost(),
             "weather_mix": self._weather_mix_pct(),
         }
@@ -411,5 +415,18 @@ class RoiScreen(MDScreen):
         app.root.current = "about"
 
     def _go_next(self) -> None:
+        error = validate_weather_mix(self._weather_mix_pct())
+        if error is None and not 1 <= self._raw_years() <= 50:
+            error = "Simulation years must be between 1 and 50."
+        if error:
+            if self._dialog:
+                self._dialog.dismiss()
+            self._dialog = MDDialog(
+                title="Invalid Data", text=error,
+                buttons=[MDFlatButton(text="OK", text_color=ACCENT,
+                                      on_release=lambda *_: self._dialog.dismiss())],
+            )
+            self._dialog.open()
+            return
         app = MDApp.get_running_app()
         app.root.current = "report"

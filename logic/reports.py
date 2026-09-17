@@ -62,6 +62,13 @@ PPTX_WEATHER_THEME = {
 ROI_SLIDE_PHOTO = "assets/images/roi_slide.jpg"
 
 
+def _spreadsheet_text(value: str) -> str:
+    """Store client supplied text as data in CSV and Excel viewers."""
+    if value and value.lstrip().startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
+
+
 # --- Excel export --------------------------------------------------------------
 
 def generate_excel(path: str, data: dict) -> None:
@@ -80,9 +87,9 @@ def generate_excel(path: str, data: dict) -> None:
     ws = wb.active
     ws.title = "Client & Assumptions"
     for row in [
-        ["Client Name", client["client_name"]], ["Project Location", client["project_location"]],
-        ["Contact Number", client["contact_number"]], ["Email", client["email"]],
-        ["Date", client["project_date"]], ["Country", client.get("country", "")], [],
+        ["Client Name", _spreadsheet_text(client["client_name"])], ["Project Location", _spreadsheet_text(client["project_location"])],
+        ["Contact Number", _spreadsheet_text(client["contact_number"])], ["Email", _spreadsheet_text(client["email"])],
+        ["Date", _spreadsheet_text(client["project_date"])], ["Country", _spreadsheet_text(client.get("country", ""))], [],
         ["Monthly Consumption (kWh)", client["monthly_kwh"]],
         ["Day/Night Ratio", f"{client['daytime_pct']}/{client['nighttime_pct']}"],
         ["Electricity Rate (PHP/kWh)", client["electricity_rate"]],
@@ -171,7 +178,7 @@ def generate_csv(path: str, data: dict) -> None:
     roi = data["roi"]
     with open(path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.writer(fh)
-        writer.writerow(["Client Name", client["client_name"]])
+        writer.writerow(["Client Name", _spreadsheet_text(client["client_name"])])
         writer.writerow(["Monthly Consumption (kWh)", client["monthly_kwh"]])
         writer.writerow(["System Cost (PHP)", roi["system_cost"]])
         writer.writerow(["Estimated Annual Savings (PHP)", roi["annual_savings"]])

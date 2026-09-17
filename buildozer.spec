@@ -1,6 +1,6 @@
 [app]
 title = SolarQuote
-package.name = solarclientfinder
+package.name = solarquotetest
 package.domain = org.solarclientfinder
 
 source.dir = .
