@@ -75,6 +75,7 @@ class BillingManager:
         self._is_pro = False
         self._initialized = False
         self._connected = False
+        self._purchase_query_seq = 0
         # ProductDetails + chosen subscription offer token, keyed by product
         # id, populated once queryProductDetailsAsync succeeds. Needed to
         # actually launch a purchase, and to show real store-configured
@@ -297,12 +298,21 @@ class BillingManager:
             params = (QueryPurchasesParams.newBuilder()
                       .setProductType("subs")
                       .build())
-            self._listeners["query_purchases"] = _PurchasesResponseListener(
-                self, lambda result, purchases: self._on_purchases_queried(result, purchases, on_complete)
-            )
-            self._billing_client.queryPurchasesAsync(params, self._listeners["query_purchases"])
+            self._purchase_query_seq += 1
+            listener_key = f"query_purchases_{self._purchase_query_seq}"
+
+            def _handle_result(result, purchases):
+                try:
+                    self._on_purchases_queried(result, purchases, on_complete)
+                finally:
+                    self._listeners.pop(listener_key, None)
+
+            self._listeners[listener_key] = _PurchasesResponseListener(self, _handle_result)
+            self._billing_client.queryPurchasesAsync(params, self._listeners[listener_key])
         except Exception as exc:
             log.warning("queryPurchasesAsync failed: %s", exc)
+            if "listener_key" in locals():
+                self._listeners.pop(listener_key, None)
             self._load_cached_tier()
             if on_complete:
                 on_complete(None)
