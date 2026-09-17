@@ -29,7 +29,7 @@ pads the root layout by that amount.
 
 import os
 
-FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarquotetest.fileprovider"
+FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
 PROVIDER_XML = f"""
         <provider

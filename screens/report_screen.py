@@ -72,7 +72,7 @@ def export_success_text(path: str, on_android: bool) -> str:
 
 # Must exactly match p4a_hooks.py's FILEPROVIDER_AUTHORITY (package.domain +
 # "." + package.name + ".fileprovider" from buildozer.spec).
-FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarquotetest.fileprovider"
+FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
 
 def export_dir(app) -> str:
