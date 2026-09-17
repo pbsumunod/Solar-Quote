@@ -111,6 +111,28 @@ jobs:
           }
           echo "Signed bundle: $AAB_FILE"
 
+      - name: Create native debug-symbol archive
+        run: |
+          AAB_FILE=$(find bin -name "*.aab" | head -n1)
+          SYMBOLS_DIR="$RUNNER_TEMP/native-debug-symbols"
+          mkdir -p "$SYMBOLS_DIR/aab"
+          unzip -q "$AAB_FILE" 'base/lib/*' -d "$SYMBOLS_DIR/aab"
+          mkdir -p "$SYMBOLS_DIR/arm64-v8a"
+          find "$SYMBOLS_DIR/aab/base/lib/arm64-v8a" -maxdepth 1 -name '*.so' -exec cp {} "$SYMBOLS_DIR/arm64-v8a/" \\;
+          test -n "$(find "$SYMBOLS_DIR/arm64-v8a" -name '*.so' -print -quit)"
+          (
+            cd "$SYMBOLS_DIR"
+            zip -q -r "$RUNNER_TEMP/solarquote-native-debug-symbols.zip" arm64-v8a
+          )
+
+      - name: Upload native debug symbols
+        uses: actions/upload-artifact@v4
+        with:
+          name: solarquote-native-debug-symbols
+          path: ${{ runner.temp }}/solarquote-native-debug-symbols.zip
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:

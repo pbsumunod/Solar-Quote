@@ -54,6 +54,9 @@ android.archs = arm64-v8a
 android.build_tools = 36.0.0
 android.enable_androidx = True
 p4a.hook = ./p4a_hooks.py
+# Retain DWARF data during the release build so CI can create the native
+# debug-symbol archive that Google Play uses to symbolicate crash reports.
+p4a.extra_args = --with-debug-symbols
 # com.android.billingclient:billing is Google Play Billing Library, used by
 # billing.py for Pro subscriptions. Was pinned to 6.2.1 -- which does NOT
 # have PendingPurchasesParams (that class was introduced in 7.0.0), but
