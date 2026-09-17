@@ -28,7 +28,7 @@ version = 1.0.0
 # has already seen numeric_version values up through 1024109 from this
 # session's internal-testing uploads, so this closed-testing release must
 # clear that even though `version` itself reset to 0.1.0.
-android.numeric_version = 1024111
+android.numeric_version = 1024112
 requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.0,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
 
 orientation = portrait
@@ -39,17 +39,19 @@ android.presplash_color = #FDFCF8
 
 p4a.local_recipes = ./recipes
 
-# Play Console requires new/updated apps to target a recent API level (35 as
+# Play Console requires new/updated apps to target a recent API level (36 as
 # of this build) -- it flags anything older as a submission-blocking error,
 # not just a warning. This is a Play policy floor, not a hard requirement of
 # the code itself, so it moves up roughly yearly; re-check Play Console's
 # error message (it names the current minimum) if this ever gets flagged
 # again in the future.
-android.api = 35
+android.api = 36
 android.minapi = 24
-android.ndk = 25b
+# NDK r28b emits 16 KB-aligned native libraries by default, required by
+# Google Play for 64-bit apps targeting Android 15/API 35 and higher.
+android.ndk = 28b
 android.archs = arm64-v8a
-android.build_tools = 35.0.0
+android.build_tools = 36.0.0
 android.enable_androidx = True
 p4a.hook = ./p4a_hooks.py
 # com.android.billingclient:billing is Google Play Billing Library, used by
