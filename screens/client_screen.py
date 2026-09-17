@@ -10,7 +10,11 @@ that logic was never Qt-specific.
 """
 
 import json
+import logging
+import math
 import re
+import sqlite3
+from datetime import date
 
 import internet_time
 
@@ -25,6 +29,7 @@ from kivymd.uix.screen import MDScreen
 
 from db import database
 from logic.models import Project
+from logic.quote_validation import validate_quote_steps
 from ui_style import (
     ACCENT, ON_SURFACE_VARIANT, about_button, bottom_primary_action, header_actions, keep_focused_field_visible, m3_field, picker_field, primary_button, save_button, save_current_project,
     project_row, screen_header, section_card, show_paywall,
@@ -38,6 +43,30 @@ EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 # project's quote_data JSON blob -- Client Info itself is already covered by
 # the project's own plain columns, so it isn't included here.
 QUOTE_STEP_SCREENS = ["consumption", "solar", "battery", "system_design", "simulation", "roi"]
+log = logging.getLogger(__name__)
+
+
+def restore_quote_steps(app, quote_data: dict) -> None:
+    """Refresh each step's inputs before restoring its saved editable values.
+
+    Later steps read derived values from earlier steps through app.state, so
+    restoring only the widgets would mix two different projects' calculations.
+    """
+    for name in QUOTE_STEP_SCREENS:
+        screen = app.root.get_screen(name)
+        saved = quote_data.get(name, {})
+        if not isinstance(saved, dict):
+            log.warning("Ignoring malformed saved state for %s", name)
+            saved = {}
+        screen.on_pre_enter()
+        try:
+            screen.apply_state(saved)
+        except (TypeError, ValueError, KeyError, IndexError) as exc:
+            log.warning("Could not restore saved state for %s: %s", name, exc)
+            screen.apply_state({})
+        finally:
+            if name == "simulation":
+                screen.on_leave()  # on_pre_enter starts its animated background
 
 
 class ClientScreen(MDScreen):
@@ -200,6 +229,7 @@ class ClientScreen(MDScreen):
         # self._country stays "Philippines" regardless of what an older saved
         # project recorded -- the country field is fixed now, not restored.
         self.current_project_id = project.id
+        MDApp.get_running_app().state.project = project
         if project.id is not None:
             self.project_row_widget._value_label.text = f"{project.client_name} - {project.project_date}"
 
@@ -222,10 +252,17 @@ class ClientScreen(MDScreen):
     def _validate(self, project: Project) -> str | None:
         if not project.client_name:
             return "Client Name is required."
-        if project.monthly_kwh <= 0:
+        if not math.isfinite(project.monthly_kwh) or project.monthly_kwh <= 0:
             return "Latest Monthly Electricity Consumption must be greater than 0."
-        if project.electricity_rate < 0:
-            return "Electricity Rate cannot be negative."
+        if not math.isfinite(project.electricity_rate) or project.electricity_rate < 0:
+            return "Electricity Rate must be a non-negative number."
+        if project.project_date:
+            try:
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", project.project_date):
+                    return "Date must be in YYYY-MM-DD format."
+                date.fromisoformat(project.project_date)
+            except ValueError:
+                return "Date must be in YYYY-MM-DD format."
         if project.email and not EMAIL_PATTERN.match(project.email):
             return "Email is not a valid email address."
         return None
@@ -242,6 +279,9 @@ class ClientScreen(MDScreen):
     def _new_project(self) -> None:
         self._apply_project(Project(daytime_ratio_pct=70, electricity_rate=DEFAULT_ELECTRICITY_RATE))
         self.project_row_widget._value_label.text = "Unsaved new project"
+        app = MDApp.get_running_app()
+        if app.root is not None and app.root.has_screen("roi"):
+            self._apply_quote_data("{}")
 
     def _apply_quote_data(self, quote_data_json: str) -> None:
         """Restores Consumption through Savings & ROI's editable fields from a
@@ -250,15 +290,17 @@ class ClientScreen(MDScreen):
         try:
             quote_data = json.loads(quote_data_json) if quote_data_json else {}
         except (TypeError, ValueError):
+            log.warning("Saved quote contains invalid JSON; restoring defaults")
+            quote_data = {}
+        if not isinstance(quote_data, dict):
+            log.warning("Saved quote is not an object; restoring defaults")
             quote_data = {}
         app = MDApp.get_running_app()
-        for name in QUOTE_STEP_SCREENS:
-            app.root.get_screen(name).apply_state(quote_data.get(name, {}))
+        restore_quote_steps(app, quote_data)
 
-    def _collect_quote_data(self) -> str:
+    def _collect_quote_data(self) -> dict:
         app = MDApp.get_running_app()
-        quote_data = {name: app.root.get_screen(name).collect_state() for name in QUOTE_STEP_SCREENS}
-        return json.dumps(quote_data)
+        return {name: app.root.get_screen(name).collect_state() for name in QUOTE_STEP_SCREENS}
 
     def save_full_quote(self) -> bool:
         """Persists the whole quote -- Client Info plus every step through Savings
@@ -275,23 +317,39 @@ class ClientScreen(MDScreen):
             self._show_message("Invalid Data", f"{error} (Client Information step)")
             return False
 
+        app = MDApp.get_running_app()
+        app.state.project = project
+        for name in QUOTE_STEP_SCREENS:
+            screen = app.root.get_screen(name)
+            screen.on_pre_enter()
+            if name == "simulation" and app.root.current != name:
+                screen.on_leave()
+        quote_data = self._collect_quote_data()
+        error = validate_quote_steps(quote_data)
+        if error:
+            self._show_message("Invalid Data", error)
+            return False
         fields = project.to_fields()
-        fields["quote_data"] = self._collect_quote_data()
-        if self.current_project_id is None:
-            if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
-                show_paywall(
-                    self,
-                    reason=(
-                        f"Free tier limited to {database.FREE_PROJECT_LIMIT} saved projects. "
-                        "Delete an old one from the project list to keep going without upgrading."
-                    ),
-                )
-                return False
-            self.current_project_id = database.create_project(fields)
-        else:
-            database.update_project(self.current_project_id, fields)
-
-        row = database.get_project(self.current_project_id)
+        fields["quote_data"] = json.dumps(quote_data)
+        try:
+            if self.current_project_id is None:
+                if database.get_tier() == "free" and database.count_projects() >= database.FREE_PROJECT_LIMIT:
+                    show_paywall(
+                        self,
+                        reason=(
+                            f"Free tier limited to {database.FREE_PROJECT_LIMIT} saved projects. "
+                            "Delete an old one from the project list to keep going without upgrading."
+                        ),
+                    )
+                    return False
+                self.current_project_id = database.create_project(fields)
+            else:
+                database.update_project(self.current_project_id, fields)
+            row = database.get_project(self.current_project_id)
+        except (sqlite3.Error, OSError, LookupError):
+            log.exception("Could not save project")
+            self._show_message("Save Failed", "Could not save this project. Please check available storage and try again.")
+            return False
         self.project_row_widget._value_label.text = f"{row['client_name']} - {row['project_date']}"
         return True
 
@@ -308,16 +366,44 @@ class ClientScreen(MDScreen):
                 ),
             )
             return
-        new_id = database.duplicate_project(self.current_project_id)
-        row = database.get_project(new_id)
+        try:
+            new_id = database.duplicate_project(self.current_project_id)
+            row = database.get_project(new_id)
+        except (sqlite3.Error, OSError, LookupError, TypeError):
+            log.exception("Could not duplicate project")
+            self._show_message("Duplicate Failed", "Could not duplicate this project.")
+            return
         self._apply_project(Project.from_row(row))
+        self._apply_quote_data(row["quote_data"])
         self.project_row_widget._value_label.text = f"{row['client_name']} - {row['project_date']}"
 
     def _delete_project(self) -> None:
         if self.current_project_id is None:
             self._show_message("No Project", "Select a saved project to delete.")
             return
-        database.delete_project(self.current_project_id)
+        if self._dialog:
+            self._dialog.dismiss()
+        self._dialog = MDDialog(
+            title="Delete Project?",
+            text="This saved project and its full quote will be permanently deleted.",
+            buttons=[
+                primary_button("Cancel", on_release=lambda: self._dialog.dismiss(),
+                               size_hint_x=None, width=dp(90)),
+                primary_button("Delete", on_release=self._confirm_delete_project,
+                               size_hint_x=None, width=dp(90)),
+            ],
+        )
+        self._dialog.open()
+
+    def _confirm_delete_project(self) -> None:
+        if self._dialog:
+            self._dialog.dismiss()
+        try:
+            database.delete_project(self.current_project_id)
+        except (sqlite3.Error, OSError):
+            log.exception("Could not delete project")
+            self._show_message("Delete Failed", "Could not delete this project.")
+            return
         self._new_project()
 
     def _go_about(self) -> None:

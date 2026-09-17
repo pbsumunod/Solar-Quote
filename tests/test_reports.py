@@ -2,7 +2,20 @@ from types import SimpleNamespace
 
 from fpdf import FPDF
 
-from logic.reports import _pdf_watermark, generate_pdf, generate_pptx
+from logic.reports import _pdf_watermark, _spreadsheet_text, generate_csv, generate_pdf, generate_pptx
+
+
+def test_spreadsheet_exports_escape_client_formula_text(tmp_path):
+    assert _spreadsheet_text(" =HYPERLINK(\"https://example.com\")").startswith("'")
+    assert _spreadsheet_text("+SUM(1,2)").startswith("'")
+    assert _spreadsheet_text("-1+2").startswith("'")
+    assert _spreadsheet_text("@SUM(1,2)").startswith("'")
+    assert _spreadsheet_text("María Santos") == "María Santos"
+    path = tmp_path / "quote.csv"
+    generate_csv(str(path), {"client": {"client_name": "=1+1", "monthly_kwh": 300},
+                             "roi": {"system_cost": 1000, "annual_savings": 100,
+                                     "payback_years": 10, "projection_rows": []}})
+    assert "'=1+1" in path.read_text(encoding="utf-8")
 
 
 def test_pdf_watermark_does_not_move_the_drawing_cursor():

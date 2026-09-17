@@ -10,6 +10,7 @@ Play Store listing to link to -- a rate button that opens nothing/fails would
 be worse than no button.
 """
 
+from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
@@ -58,6 +59,8 @@ class AboutScreen(MDScreen):
         super().__init__(**kwargs)
         self.name = "about"
         self._dialog: MDDialog | None = None
+        self._restoring = False
+        self._restore_timeout = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -181,15 +184,39 @@ class AboutScreen(MDScreen):
         )
 
     def _restore_purchases(self) -> None:
+        if self._restoring:
+            return
+        self._restoring = True
+        self._show_notice("Checking Purchases", "Checking Google Play for an active subscription...")
+        self._restore_timeout = Clock.schedule_once(self._restore_timed_out, 15)
         try:
             billing = MDApp.get_running_app().billing
-            restored = billing.restore_purchases()
-            if restored:
-                self._show_notice("Restored", "Your Pro subscription has been restored!")
-            else:
-                self._show_notice("No Purchases", "No previous purchases found.")
+            billing.restore_purchases(on_complete=self._on_restore_complete)
         except Exception:
-            self._show_notice("Error", "Could not restore purchases. Please try again later.")
+            self._on_restore_complete(None)
+
+    def _on_restore_complete(self, result: bool | None) -> None:
+        # Play callbacks may arrive on a Java thread. Widgets belong to Kivy's thread.
+        Clock.schedule_once(lambda _dt: self._finish_restore(result), 0)
+
+    def _finish_restore(self, result: bool | None) -> None:
+        if not self._restoring:
+            return
+        self._restoring = False
+        if self._restore_timeout:
+            self._restore_timeout.cancel()
+            self._restore_timeout = None
+        self._refresh_tier_display()
+        if result is True:
+            self._show_notice("Restored", "Your Pro subscription has been restored!")
+        elif result is False:
+            self._show_notice("No Purchases", "No active subscription was found for this Google Play account.")
+        else:
+            self._show_notice("Restore Unavailable", "Could not check Google Play. Please try again later.")
+
+    def _restore_timed_out(self, _dt) -> None:
+        self._restore_timeout = None
+        self._finish_restore(None)
 
     def _upgrade(self) -> None:
         from ui_style import show_paywall

@@ -52,3 +52,41 @@ def test_empty_play_query_preserves_active_local_trial(tmp_path):
     assert manager.is_pro() is True
     assert database.get_tier() == "pro"
     assert database.get_pro_source() == "trial"
+
+
+def test_restore_callback_waits_for_query_result(tmp_path):
+    _configure_db(tmp_path)
+    database.set_tier("pro")
+    database.set_pro_source("purchase")
+    manager = BillingManager()
+    manager._is_pro = True
+    outcomes = []
+
+    class Result:
+        def getResponseCode(self):
+            return 0
+
+    manager._on_purchases_queried(Result(), _JavaList(), outcomes.append)
+
+    assert outcomes == [False]
+    assert database.get_tier() == "free"
+
+
+def test_restore_callback_reports_query_failure_without_claiming_success(tmp_path):
+    _configure_db(tmp_path)
+    database.set_tier("pro")
+    database.set_pro_source("purchase")
+    manager = BillingManager()
+    outcomes = []
+
+    class Result:
+        def getResponseCode(self):
+            return 3
+
+        def getDebugMessage(self):
+            return "Unavailable"
+
+    manager._on_purchases_queried(Result(), None, outcomes.append)
+
+    assert outcomes == [None]
+    assert database.get_tier() == "pro"  # preserve cache on transient errors

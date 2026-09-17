@@ -75,6 +75,7 @@ class BillingManager:
         self._is_pro = False
         self._initialized = False
         self._connected = False
+        self._purchase_query_seq = 0
         # ProductDetails + chosen subscription offer token, keyed by product
         # id, populated once queryProductDetailsAsync succeeds. Needed to
         # actually launch a purchase, and to show real store-configured
@@ -269,10 +270,12 @@ class BillingManager:
     # every cold start)
     # ------------------------------------------------------------------
 
-    def _query_purchases(self) -> None:
+    def _query_purchases(self, on_complete=None) -> None:
         """Query active subscriptions from Google Play."""
         if not self._connected or not self._billing_client:
             self._load_cached_tier()
+            if on_complete:
+                on_complete(None)
             return
 
         try:
@@ -295,22 +298,37 @@ class BillingManager:
             params = (QueryPurchasesParams.newBuilder()
                       .setProductType("subs")
                       .build())
-            self._listeners["query_purchases"] = _PurchasesResponseListener(
-                self, self._on_purchases_queried
-            )
-            self._billing_client.queryPurchasesAsync(params, self._listeners["query_purchases"])
+            self._purchase_query_seq += 1
+            listener_key = f"query_purchases_{self._purchase_query_seq}"
+
+            def _handle_result(result, purchases):
+                try:
+                    self._on_purchases_queried(result, purchases, on_complete)
+                finally:
+                    self._listeners.pop(listener_key, None)
+
+            self._listeners[listener_key] = _PurchasesResponseListener(self, _handle_result)
+            self._billing_client.queryPurchasesAsync(params, self._listeners[listener_key])
         except Exception as exc:
             log.warning("queryPurchasesAsync failed: %s", exc)
+            if "listener_key" in locals():
+                self._listeners.pop(listener_key, None)
             self._load_cached_tier()
+            if on_complete:
+                on_complete(None)
 
-    def _on_purchases_queried(self, billing_result, purchases_list) -> None:
+    def _on_purchases_queried(self, billing_result, purchases_list, on_complete=None) -> None:
         if billing_result.getResponseCode() != _RESPONSE_OK:
             log.warning("Query purchases failed: %s", billing_result.getDebugMessage())
             self._load_cached_tier()
+            if on_complete:
+                on_complete(None)
             return
-        self._process_purchases(purchases_list)
+        found = self._process_purchases(purchases_list)
+        if on_complete:
+            on_complete(found)
 
-    def _process_purchases(self, purchases_list) -> None:
+    def _process_purchases(self, purchases_list) -> bool | None:
         """Process the list of purchases returned by Google Play.
 
         A successful query is authoritative for Play-managed entitlements.
@@ -335,7 +353,7 @@ class BillingManager:
             except Exception as exc:
                 log.warning("Error processing purchases: %s", exc)
                 self._load_cached_tier()
-                return
+                return None
 
         if active_purchase is not None:
             # A confirmed real purchase always wins over -- and clears -- any
@@ -372,6 +390,7 @@ class BillingManager:
                     self.on_tier_changed()
                 except Exception as exc:
                     log.warning("on_tier_changed callback failed: %s", exc)
+        return active_purchase is not None
 
     # ------------------------------------------------------------------
     # Acknowledgement -- Google auto-refunds any subscription purchase not
@@ -537,21 +556,27 @@ class BillingManager:
     # Restore
     # ------------------------------------------------------------------
 
-    def restore_purchases(self) -> bool:
-        """Re-query Google Play for active subscriptions. Returns True if Pro."""
+    def restore_purchases(self, on_complete=None) -> bool | None:
+        """Re-query Play; report a confirmed purchase through on_complete.
+
+        Android's query is asynchronous, so an immediate cached tier is not a
+        reliable restore result. None means Play could not be queried.
+        """
         if platform != "android":
             self._load_cached_tier()
-            return self._is_pro
+            from db import database
+            found = self._is_pro and database.get_pro_source() == "purchase"
+            if on_complete:
+                on_complete(found)
+            return found
 
         if self._connected and self._billing_client:
-            try:
-                self._query_purchases()
-                return self._is_pro
-            except Exception as exc:
-                log.warning("restore_purchases failed: %s", exc)
-
-        self._load_cached_tier()
-        return self._is_pro
+            self._query_purchases(on_complete)
+            return None
+        log.warning("restore_purchases requested while billing is disconnected")
+        if on_complete:
+            on_complete(None)
+        return None
 
     # ------------------------------------------------------------------
     # Tier helpers

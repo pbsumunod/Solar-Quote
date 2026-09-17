@@ -18,6 +18,7 @@ generation.
 
 import os
 import shutil
+import logging
 
 from kivy.clock import Clock
 from kivy.metrics import dp
@@ -35,6 +36,7 @@ from kivymd.uix.spinner import MDSpinner
 from db import database
 from logic.chart_series import DOD_FLOOR_COLOR, roi_chart_series, series_for_result
 from logic.reports import DISCLAIMER, SCENARIO_ORDER, generate_csv, generate_excel, generate_pdf, generate_pptx
+from logic.quote_validation import validate_quote_steps
 from ui_style import (
     ACCENT, TEXT_DARK, about_button, bottom_back_action, header_actions, icon_button, keep_focused_field_visible, m3_field, save_button,
     screen_header, section_card, section_label, show_paywall, tonal_button, with_bg,
@@ -47,6 +49,26 @@ MIME_TYPES = {
     "csv": "text/csv",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
+log = logging.getLogger(__name__)
+
+
+def available_export_path(directory: str, filename: str) -> str:
+    """Keep prior proposals when the user exports the same format again."""
+    stem, extension = os.path.splitext(filename)
+    path = os.path.join(directory, filename)
+    number = 2
+    while os.path.exists(path):
+        path = os.path.join(directory, f"{stem}_{number}{extension}")
+        number += 1
+    return path
+
+
+def export_success_text(path: str, on_android: bool) -> str:
+    """Describe the exported file without displaying app-private storage paths."""
+    message = f"Saved as {os.path.basename(path)}"
+    if on_android:
+        message += "\nUse View or Share to access the report."
+    return message
 
 # Must exactly match p4a_hooks.py's FILEPROVIDER_AUTHORITY (package.domain +
 # "." + package.name + ".fileprovider" from buildozer.spec).
@@ -336,11 +358,18 @@ class ReportScreen(MDScreen):
     def _do_export(self, kind: str) -> None:
         try:
             app = MDApp.get_running_app()
+            client_screen = app.root.get_screen("client")
+            project = client_screen._collect_project()
+            error = client_screen._validate(project) or validate_quote_steps(client_screen._collect_quote_data())
+            if error:
+                self._show_message("Invalid Data", error)
+                return
             data = self._collect_data()
             out_dir = export_dir(app)
             filenames = {"pdf": "solar_proposal.pdf", "excel": "solar_proposal.xlsx",
                          "csv": "solar_proposal.csv", "pptx": "solar_proposal.pptx"}
-            path = os.path.join(out_dir, filenames[kind])
+            os.makedirs(out_dir, exist_ok=True)
+            path = available_export_path(out_dir, filenames[kind])
             chart_image_paths = []
             try:
                 if kind == "pdf":
@@ -360,12 +389,18 @@ class ReportScreen(MDScreen):
                     chart_image_paths = [roi_chart_image] + list(chart_images.values())
                     generate_pptx(path, data, chart_images=chart_images, roi_chart_image=roi_chart_image)
             except Exception as exc:
-                self._show_message("Export Failed", f"Could not generate the {kind.upper()} report:\n{exc}")
+                log.exception("Could not generate %s report", kind)
+                self._show_message("Export Failed", f"Could not generate the {kind.upper()} report. Please try again.")
                 return
             finally:
                 if chart_image_paths:
                     self._cleanup_chart_images(chart_image_paths)
+                elif kind in ("pdf", "pptx"):
+                    shutil.rmtree(self._chart_tmp_dir(), ignore_errors=True)
             self._show_export_success(path, MIME_TYPES[kind], data["client"].get("email", ""))
+        except Exception:
+            log.exception("Export setup failed for %s", kind)
+            self._show_message("Export Failed", "Could not prepare the report. Please check your entries and try again.")
         finally:
             self._exporting = False
 
@@ -401,8 +436,8 @@ class ReportScreen(MDScreen):
             self._dialog.dismiss()
         content = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         content.add_widget(MDLabel(
-            text=f"Saved to:\n{path}", halign="left",
-            size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
+            text=export_success_text(path, platform == "android"), halign="left",
+            size_hint_y=None, height=dp(72), theme_text_color="Custom", text_color=TEXT_DARK,
         ))
         # One button per row, each full-width -- not a 2-column grid. MDDialog
         # caps its own width at 280dp on mobile (kivymd's DEVICE_TYPE check),
@@ -452,9 +487,10 @@ class ReportScreen(MDScreen):
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             activity.startActivity(intent)
         except Exception as exc:
+            log.warning("Could not open exported file: %s", exc)
             self._show_message(
                 "Can't Open File",
-                f"No app on this device is set up to open this file type:\n{exc}",
+                "Could not open this file. Check that an app for this file type is installed.",
             )
 
     def _share_file(self, path: str, mime_type: str) -> None:
@@ -477,7 +513,8 @@ class ReportScreen(MDScreen):
             # a real java.lang.String -- CharSequence-compatible instance -- first.
             activity.startActivity(Intent.createChooser(intent, String("Share Report")))
         except Exception as exc:
-            self._show_message("Share Failed", f"Could not open the share sheet:\n{exc}")
+            log.warning("Could not share exported file: %s", exc)
+            self._show_message("Share Failed", "Could not open the share sheet.")
 
     def _email_to_client(self, path: str, mime_type: str, client_email: str) -> None:
         """Opens the phone's email app with the client's address (from the
@@ -506,7 +543,8 @@ class ReportScreen(MDScreen):
             # CharSequence, which pyjnius won't resolve from a plain Python str.
             activity.startActivity(Intent.createChooser(intent, String("Send via Email")))
         except Exception as exc:
-            self._show_message("Email Failed", f"Could not open an email app:\n{exc}")
+            log.warning("Could not open email app for export: %s", exc)
+            self._show_message("Email Failed", "Could not open an email app.")
 
     def _save_project(self) -> None:
         app = MDApp.get_running_app()

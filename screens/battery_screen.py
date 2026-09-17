@@ -27,6 +27,7 @@ from logic.calculations import (
     round_up_to_standard_size,
     split_day_night_kwh,
 )
+from logic.quote_validation import finite_float_or
 from ui_style import (
     ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
 )
@@ -117,10 +118,7 @@ class BatteryScreen(MDScreen):
         self._recalculate()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        try:
-            return float(field.text)
-        except ValueError:
-            return default
+        return finite_float_or(field.text, default)
 
     def _nighttime_kwh(self) -> float:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)

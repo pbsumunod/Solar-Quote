@@ -95,45 +95,50 @@ def _migrate_add_missing_columns(conn: sqlite3.Connection) -> None:
 
 def create_project(fields: dict) -> int:
     conn = get_connection()
-    cursor = conn.execute(
-        """
-        INSERT INTO projects
-            (client_name, project_location, contact_number, email, project_date,
-             notes, monthly_kwh, daytime_ratio_pct, electricity_rate, country, quote_data)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            fields["client_name"], fields["project_location"], fields["contact_number"],
-            fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
-            fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
-            fields.get("quote_data", "{}"),
-        ),
-    )
-    conn.commit()
-    new_id = cursor.lastrowid
-    conn.close()
-    return new_id
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO projects
+                (client_name, project_location, contact_number, email, project_date,
+                 notes, monthly_kwh, daytime_ratio_pct, electricity_rate, country, quote_data)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                fields["client_name"], fields["project_location"], fields["contact_number"],
+                fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
+                fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
+                fields.get("quote_data", "{}"),
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
 
 
 def update_project(project_id: int, fields: dict) -> None:
     conn = get_connection()
-    conn.execute(
-        """
-        UPDATE projects SET
-            client_name = ?, project_location = ?, contact_number = ?, email = ?,
-            project_date = ?, notes = ?, monthly_kwh = ?, daytime_ratio_pct = ?,
-            electricity_rate = ?, country = ?, quote_data = ?, updated_at = datetime('now')
-        WHERE id = ?
-        """,
-        (
-            fields["client_name"], fields["project_location"], fields["contact_number"],
-            fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
-            fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
-            fields.get("quote_data", "{}"), project_id,
-        ),
-    )
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.execute(
+            """
+            UPDATE projects SET
+                client_name = ?, project_location = ?, contact_number = ?, email = ?,
+                project_date = ?, notes = ?, monthly_kwh = ?, daytime_ratio_pct = ?,
+                electricity_rate = ?, country = ?, quote_data = ?, updated_at = datetime('now')
+            WHERE id = ?
+            """,
+            (
+                fields["client_name"], fields["project_location"], fields["contact_number"],
+                fields["email"], fields["project_date"], fields["notes"], fields["monthly_kwh"],
+                fields["daytime_ratio_pct"], fields["electricity_rate"], fields.get("country", ""),
+                fields.get("quote_data", "{}"), project_id,
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise LookupError(f"Project {project_id} no longer exists")
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_project(project_id: int) -> sqlite3.Row | None:
@@ -152,9 +157,11 @@ def list_projects() -> list[sqlite3.Row]:
 
 def delete_project(project_id: int) -> None:
     conn = get_connection()
-    conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def duplicate_project(project_id: int) -> int:
