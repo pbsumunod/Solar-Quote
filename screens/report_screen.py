@@ -62,6 +62,14 @@ def available_export_path(directory: str, filename: str) -> str:
         number += 1
     return path
 
+
+def export_success_text(path: str, on_android: bool) -> str:
+    """Describe the exported file without displaying app-private storage paths."""
+    message = f"Saved as {os.path.basename(path)}"
+    if on_android:
+        message += "\nUse View or Share to access the report."
+    return message
+
 # Must exactly match p4a_hooks.py's FILEPROVIDER_AUTHORITY (package.domain +
 # "." + package.name + ".fileprovider" from buildozer.spec).
 FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarquotetest.fileprovider"
@@ -428,8 +436,8 @@ class ReportScreen(MDScreen):
             self._dialog.dismiss()
         content = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         content.add_widget(MDLabel(
-            text=f"Saved to:\n{path}", halign="left",
-            size_hint_y=None, height=dp(48), theme_text_color="Custom", text_color=TEXT_DARK,
+            text=export_success_text(path, platform == "android"), halign="left",
+            size_hint_y=None, height=dp(72), theme_text_color="Custom", text_color=TEXT_DARK,
         ))
         # One button per row, each full-width -- not a 2-column grid. MDDialog
         # caps its own width at 280dp on mobile (kivymd's DEVICE_TYPE check),
