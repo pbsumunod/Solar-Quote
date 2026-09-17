@@ -118,7 +118,7 @@ jobs:
           mkdir -p "$SYMBOLS_DIR/aab"
           unzip -q "$AAB_FILE" 'base/lib/*' -d "$SYMBOLS_DIR/aab"
           mkdir -p "$SYMBOLS_DIR/arm64-v8a"
-          find "$SYMBOLS_DIR/aab/base/lib/arm64-v8a" -maxdepth 1 -name '*.so' -exec cp {} "$SYMBOLS_DIR/arm64-v8a/" \\;
+          find "$SYMBOLS_DIR/aab/base/lib/arm64-v8a" -maxdepth 1 -name '*.so' -exec cp {} "$SYMBOLS_DIR/arm64-v8a/" \;
           test -n "$(find "$SYMBOLS_DIR/arm64-v8a" -name '*.so' -print -quit)"
           (
             cd "$SYMBOLS_DIR"
