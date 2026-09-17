@@ -37,18 +37,26 @@ def _restore_android_system_bar_defaults() -> None:
     if platform != "android":
         return
     try:
+        from android.runnable import run_on_ui_thread
         from jnius import autoclass
 
-        PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        decor_view = PythonActivity.mActivity.getWindow().getDecorView()
-        View = autoclass("android.view.View")
-        flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
-        BuildVersion = autoclass("android.os.Build$VERSION")
-        if BuildVersion.SDK_INT >= 26:
-            flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
-        decor_view.setSystemUiVisibility(
-            decor_view.getSystemUiVisibility() | flags
-        )
+        @run_on_ui_thread
+        def apply_system_bar_defaults():
+            try:
+                PythonActivity = autoclass("org.kivy.android.PythonActivity")
+                decor_view = PythonActivity.mActivity.getWindow().getDecorView()
+                View = autoclass("android.view.View")
+                flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                BuildVersion = autoclass("android.os.Build$VERSION")
+                if BuildVersion.SDK_INT >= 26:
+                    flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                decor_view.setSystemUiVisibility(
+                    decor_view.getSystemUiVisibility() | flags
+                )
+            except Exception:
+                log.exception("Could not restore Android system-bar appearance")
+
+        apply_system_bar_defaults()
     except Exception as exc:
         log.warning("Could not restore Android system-bar appearance: %s", exc)
 
