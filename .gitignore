@@ -2,6 +2,9 @@
 .buildozer/
 bin/
 
+# Play Store listing artwork and generated contact sheet
+store_assets/
+
 # Python
 __pycache__/
 *.pyc

@@ -5,8 +5,8 @@ package.domain = org.solarclientfinder
 
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
-source.exclude_dirs = tests, assets/icon, assets/splash
-source.exclude_patterns = p4a_hooks.py
+source.exclude_dirs = tests, assets/icon, assets/splash, assets/store_screenshots
+source.exclude_patterns = p4a_hooks.py, assets/feature_graphic.png, assets/SolarQuote_Icon_512x512.png
 
 # versionName (cosmetic, shown to users -- bump however you like). Reset to
 # 0.1.0 for the first real Closed Testing release: every 0.1.1-0.1.9 build
