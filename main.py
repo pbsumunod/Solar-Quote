@@ -62,24 +62,10 @@ def _restore_android_system_bar_defaults() -> None:
 
 
 def _android_system_bar_insets() -> tuple:
-    """(top_dp, bottom_dp) padding needed to clear the status bar and
-    navigation bar on Android.
+    """Initial (top_dp, bottom_dp) fallback before live WindowInsets arrive.
 
-    Apps targeting API 35 (Android 15) get edge-to-edge display enforced
-    unconditionally -- content draws behind the system bars whether the app
-    asked for it or not. A previous version of this code assumed a manifest
-    attribute could opt back out of that; checked directly against Android's
-    edge-to-edge developer guide, there is no such opt-out. Apps must handle
-    insets themselves, full stop. Kivy 2.3/KivyMD 1.2 have no built-in
-    WindowInsets support, so this reads the system bar dimensions directly
-    from Android's own resources (the same values the OS itself uses to
-    reserve that space) and the caller pads the root layout by that amount.
-
-    This is a one-time query at startup, not a live WindowInsets listener --
-    good enough since the app is portrait-locked (orientation = portrait in
-    buildozer.spec) so these dimensions don't change mid-session on a given
-    device. Falls back to (0, 0) on non-Android or if anything goes wrong,
-    so a lookup failure just means no padding rather than a crash.
+    The activity listener later replaces this with actual system-bar and
+    display-cutout insets, including changes during the activity lifetime.
     """
     if platform != "android":
         return 0, 0
@@ -225,6 +211,8 @@ class SolarClientFinderApp(MDApp):
         self.theme_cls.primary_palette = "Green"
 
         self._show_onboarding = show_onboarding
+        self._draft_event = None
+        self._insets_listener = None
         self._screen_manager = LoadingScreenManager()
         # Play Billing callbacks (a purchase completing, a trial being
         # confirmed) land asynchronously, on whatever thread pyjnius delivers
@@ -281,20 +269,114 @@ class SolarClientFinderApp(MDApp):
         sm.add_widget(SimulationScreen())
         sm.add_widget(RoiScreen())
         sm.add_widget(ReportScreen())
+        client = sm.get_screen("client")
+        client.restore_draft()
+        self._draft_event = Clock.schedule_interval(client.persist_draft, 2)
         sm.bind(current=sm.show_navigation_loading)
         sm.bind(current=self._on_screen_change)
         sm.current = "onboarding" if self._show_onboarding else "client"
+        self._install_android_insets_listener()
+        Window.bind(on_keyboard=self._on_keyboard)
 
     MAIN_SCREENS = {"client", "consumption", "solar", "battery", "system_design", "simulation", "roi", "report"}
 
     def _on_screen_change(self, _inst, screen_name: str) -> None:
         self._plan_label.opacity = 1 if screen_name in self.MAIN_SCREENS else 0
+        if self.root is not None and self.root.has_screen("client"):
+            self.root.get_screen("client").persist_draft()
 
     def _on_billing_tier_changed(self) -> None:
         """billing.py calls this after a confirmed Play purchase changes the
         tier. May be called from a non-Kivy thread, so touch no widgets here
         directly -- schedule the actual refresh onto Kivy's main thread."""
         Clock.schedule_once(lambda _dt: self._screen_manager.refresh_plan_label())
+
+    def _on_keyboard(self, _window, key, *_args):
+        if key != 27 or self.root is None:
+            return False
+        current = self.root.current
+        order = ["client", "consumption", "solar", "battery", "system_design", "simulation", "roi", "report"]
+        if current in order and current != "client":
+            self.root.current = order[order.index(current) - 1]
+            return True
+        if current == "about":
+            self.root.current = self.state.about_return_to
+            return True
+        if current in ("privacy", "terms"):
+            self.root.current = "about"
+            return True
+        self._preserve_draft()
+        return False
+
+    def _preserve_draft(self) -> None:
+        if MDApp.get_running_app() is not self:
+            return  # Kivy can dispatch on_stop again after clearing the app.
+        if self.root is not None and self.root.has_screen("client"):
+            self.root.get_screen("client").persist_draft()
+
+    def on_pause(self):
+        self._preserve_draft()
+        return True
+
+    def on_resume(self):
+        internet_time.init(force=True)
+        if hasattr(self, "billing"):
+            self.billing.refresh_on_resume()
+        self._install_android_insets_listener()
+        Clock.schedule_once(lambda _dt: self._screen_manager.refresh_plan_label())
+
+    def on_stop(self):
+        self._preserve_draft()
+        if getattr(self, "_draft_event", None):
+            self._draft_event.cancel()
+        Window.unbind(on_keyboard=self._on_keyboard)
+        if hasattr(self, "billing"):
+            self.billing.close()
+
+    def _install_android_insets_listener(self) -> None:
+        """Apply real system-bar/cutout insets, retaining Kivy's own keyboard resize."""
+        if platform != "android" or self.root is None:
+            return
+        try:
+            from android.runnable import run_on_ui_thread
+            from jnius import PythonJavaClass, java_method, autoclass
+            owner = self
+            class InsetsListener(PythonJavaClass):
+                __javainterfaces__ = ["android/view/View$OnApplyWindowInsetsListener"]
+                __javacontext__ = "app"
+
+                @java_method("(Landroid/view/View;Landroid/view/WindowInsets;)Landroid/view/WindowInsets;")
+                def onApplyWindowInsets(self, _view, insets):
+                    sdk = autoclass("android.os.Build$VERSION").SDK_INT
+                    if sdk >= 30:
+                        types = autoclass("android.view.WindowInsets$Type")
+                        bars = insets.getInsets(types.systemBars() | types.displayCutout())
+                        padding = (bars.left, bars.top, bars.right, bars.bottom)
+                    else:
+                        top = insets.getSystemWindowInsetTop()
+                        bottom = min(insets.getSystemWindowInsetBottom(), insets.getStableInsetBottom())
+                        left, right = insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetRight()
+                        if sdk >= 28 and insets.getDisplayCutout() is not None:
+                            cutout = insets.getDisplayCutout()
+                            top = max(top, cutout.getSafeInsetTop())
+                            bottom = max(bottom, cutout.getSafeInsetBottom())
+                            left = max(left, cutout.getSafeInsetLeft())
+                            right = max(right, cutout.getSafeInsetRight())
+                        padding = (left, top, right, bottom)
+                    Clock.schedule_once(lambda _dt: setattr(owner.root, "padding", padding) if owner.root else None)
+                    return insets
+
+            if self._insets_listener is None:
+                self._insets_listener = InsetsListener()
+            @run_on_ui_thread
+            def install():
+                activity = autoclass("org.kivy.android.PythonActivity").mActivity
+                view = activity.findViewById(16908290)  # android.R.id.content
+                view.setOnApplyWindowInsetsListener(self._insets_listener)
+                view.requestApplyInsets()
+            install()
+        except Exception:
+            log.exception("Could not install Android window-insets handling")
 
 
 if __name__ == "__main__":

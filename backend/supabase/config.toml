@@ -1,0 +1,10 @@
+# This isolated project directory deploys only Solar-Quote functions.
+# It does not change the existing DeyeTrack/Studio Supabase configuration.
+project_id = "solarquote-purchase-verification"
+
+[functions.solarquote-play-verify]
+verify_jwt = false
+
+# Google OIDC is verified inside this handler; it is not a Supabase user JWT.
+[functions.solarquote-play-rtdn]
+verify_jwt = false

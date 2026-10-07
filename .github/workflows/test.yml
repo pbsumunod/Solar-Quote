@@ -1,0 +1,48 @@
+name: Tests and lint
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  supabase:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: "2.9.6"
+      - name: Check, lint and test the purchase-verification adapter
+        working-directory: backend/supabase
+        run: |
+          deno task check
+          deno task lint
+          deno task test
+  tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements-dev.txt
+            backend/requirements.txt
+      - name: Install headless display dependencies
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
+      - name: Install pinned test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check Python syntax and undefined names
+        run: python -m ruff check --select E9,F63,F7,F82 .
+      - name: Run tests
+        env:
+          KIVY_NO_ARGS: "1"
+          KIVY_NO_CONSOLELOG: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+        run: xvfb-run -a python -m pytest -q

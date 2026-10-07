@@ -1,0 +1,49 @@
+--- a/setup.py
++++ b/setup.py
+@@ -167,6 +167,7 @@
+ 
+ 
+ def _find_library_dirs_ldconfig() -> list[str]:
++    return []
+     # Based on ctypes.util from Python 2
+ 
+     ldconfig = "ldconfig" if shutil.which("ldconfig") else "/sbin/ldconfig"
+@@ -521,12 +522,10 @@
+ 
+             if root is None and root_name in os.environ:
+                 root_prefix = os.environ[root_name]
+-                root = (
+-                    os.path.join(root_prefix, "lib"),
+-                    os.path.join(root_prefix, "include"),
+-                )
++                root = tuple(root_prefix.split(":"))
+ 
+             if root is None and pkg_config:
++                continue
+                 for lib_name2 in (
+                     [lib_name] if isinstance(lib_name, str) else lib_name
+                 ):
+@@ -569,13 +568,11 @@
+                 for d in os.environ[k].split(os.path.pathsep):
+                     _add_directory(library_dirs, d)
+ 
+-        _add_directory(library_dirs, os.path.join(sys.prefix, "lib"))
+-        _add_directory(include_dirs, os.path.join(sys.prefix, "include"))
+ 
+         #
+         # add platform directories
+ 
+-        if self.disable_platform_guessing:
++        if True:  # Android paths are supplied by the recipe.
+             pass
+ 
+         elif sys.platform == "cygwin":
+@@ -678,7 +675,7 @@
+         # FIXME: check /opt/stuff directories here?
+ 
+         # standard locations
+-        if not self.disable_platform_guessing:
++        if False:  # Never use host /usr/local include/library paths.
+             _add_directory(library_dirs, "/usr/local/lib")
+             _add_directory(include_dirs, "/usr/local/include")
+ 

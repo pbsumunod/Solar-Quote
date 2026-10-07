@@ -5,4 +5,5 @@
      into AndroidManifest.xml at build time. -->
 <paths>
     <external-files-path name="exports" path="." />
+    <files-path name="private_reports" path="reports/" />
 </paths>

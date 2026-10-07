@@ -1,0 +1,19 @@
+# Desktop tests and headless CI; Android requirements live in buildozer.spec.
+kivy==2.3.1
+kivymd==1.2.0
+openpyxl==3.1.5
+certifi==2026.7.22
+chardet==5.2.0
+et_xmlfile==2.0.0
+fpdf2==2.7.9
+fonttools==4.65.0
+defusedxml==0.7.1
+pillow==12.3.0
+lxml==5.2.2
+python-pptx==1.0.2
+typing_extensions==4.16.0
+plyer==2.1.0
+pytest==8.4.2
+pypdf==6.19.0
+ruff==0.14.3
+-r backend/requirements.txt

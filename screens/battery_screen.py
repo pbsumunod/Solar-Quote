@@ -1,15 +1,11 @@
-"""Battery screen (ported from the desktop app's ui/battery.py).
+"""Automatic battery voltage, module count and compatible power limits.
 
-Simplified from the original unit-capacity x count design: the app now auto-picks
-the total battery capacity from a fixed catalog (logic.calculations
-.BATTERY_CAPACITY_TIERS_KWH), rounded up to the next tier -- no more manually
-entering a per-unit capacity and a battery count. Battery voltage stays as a plain
-assumption field (it doesn't feed any calculation, just informational for whoever
-specs the physical hardware). All sizing math is unchanged, from the ported
-logic/calculations.py; SHOW CALCULATION still exposes it.
+The hourly demand profile determines nighttime storage, including battery and
+inverter losses. Disabled storage or zero nighttime demand needs no battery.
 """
 
-from kivy.metrics import dp
+from kivy.metrics import dp, Metrics
+from kivy.clock import Clock
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -19,22 +15,15 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.textfield import MDTextField
 
-from logic.calculations import (
-    BATTERY_CAPACITY_TIERS_KWH,
-    battery_usable_capacity_kwh,
-    daily_consumption_kwh,
-    required_battery_kwh,
-    round_up_to_standard_size,
-    split_day_night_kwh,
-)
-from logic.quote_validation import finite_float_or
+from logic.calculations import battery_usable_capacity_kwh
+from logic.equipment import refresh_equipment_design
+from logic.quote_validation import finite_float_or, live_float_or
 from ui_style import (
     ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
 DEFAULT_BATTERY_EFFICIENCY_PCT = 90.0
-DEFAULT_BATTERY_VOLTAGE = 48.0
 
 
 class BatteryScreen(MDScreen):
@@ -73,11 +62,13 @@ class BatteryScreen(MDScreen):
             assumptions_row.add_widget(f)
         assumptions_card.add_widget(assumptions_row)
 
-        self.voltage_field = m3_field(
-            "Battery Voltage (V)", icon="flash-outline", input_filter="float", text=f"{DEFAULT_BATTERY_VOLTAGE:.1f}",
+        self.voltage_label = MDLabel(
+            text="Voltage and battery modules selected automatically for the inverter.",
+            theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None, height=dp(72),
         )
-        self.voltage_field.bind(text=lambda *_a: self._recalculate())
-        assumptions_card.add_widget(self.voltage_field)
+        self.voltage_label.bind(width=lambda inst, value: setattr(inst, "text_size", (value, None)),
+                                texture_size=lambda inst, value: setattr(inst, "height", value[1] + dp(8)))
+        assumptions_card.add_widget(self.voltage_label)
         form.add_widget(assumptions_card)
 
         result_card = section_card("battery-high", "Recommended Battery Capacity")
@@ -85,22 +76,41 @@ class BatteryScreen(MDScreen):
             text="Nighttime Consumption: -- kWh", theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(24),
         ))
+        self.nighttime_context_label.bind(width=lambda inst, value: setattr(inst, "text_size", (value, None)),
+                                          texture_size=lambda inst, value: setattr(inst, "height", value[1] + dp(4)))
         result_card.add_widget(self.nighttime_context_label)
 
         result_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.recommended_label = with_bg(MDLabel(
-            text="-- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT,
+            text="-- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT, size_hint_y=None,
         ))
         result_row.add_widget(self.recommended_label)
-        result_row.add_widget(tonal_button(
+        calculation_button = tonal_button(
             "SHOW CALCULATION", on_release=self._show_calculation, size_hint_x=None, width=dp(170),
-        ))
+        )
+        result_row.add_widget(calculation_button)
+        self.recommended_label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+                                    texture_size=lambda widget, size: setattr(widget, "height", size[1] + dp(8)))
+        def fit_result(*_args):
+            vertical = result_row.width / max(1, Metrics.fontscale) < dp(320)
+            result_row.orientation = "vertical" if vertical else "horizontal"
+            calculation_button.size_hint_x = 1 if vertical else None
+            if not vertical:
+                calculation_button.width = dp(170)
+            heights = [widget.height for widget in result_row.children]
+            result_row.height = sum(heights) + result_row.spacing if vertical else max(heights, default=dp(48))
+        result_row.bind(width=fit_result)
+        self.recommended_label.bind(height=fit_result)
+        calculation_button.bind(height=fit_result)
+        Clock.schedule_once(fit_result)
         result_card.add_widget(result_row)
 
         self.usable_capacity_label = with_bg(MDLabel(
             text="Usable Battery Capacity: -- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT,
             size_hint_y=None, height=dp(28),
         ))
+        self.usable_capacity_label.bind(width=lambda inst, value: setattr(inst, "text_size", (value, None)),
+                                        texture_size=lambda inst, value: setattr(inst, "height", value[1] + dp(4)))
         result_card.add_widget(self.usable_capacity_label)
         form.add_widget(result_card)
 
@@ -118,63 +128,80 @@ class BatteryScreen(MDScreen):
         self._recalculate()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        return finite_float_or(field.text, default)
+        return live_float_or(field.text, default)
 
     def _nighttime_kwh(self) -> float:
-        daily_kwh = daily_consumption_kwh(self.monthly_kwh)
-        _, night_kwh = split_day_night_kwh(daily_kwh, self.daytime_pct)
-        return night_kwh
+        return self._design().nighttime_kwh
+
+    def _design(self):
+        state = MDApp.get_running_app().state
+        state.battery_dod_pct = self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT)
+        state.battery_efficiency_pct = self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT)
+        return refresh_equipment_design(state)
 
     def _required_kwh(self) -> float:
-        night_kwh = self._nighttime_kwh()
-        dod_pct = self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT)
-        efficiency_pct = self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT)
-        return required_battery_kwh(night_kwh, dod_pct, efficiency_pct)
+        return self._design().battery_required_kwh
 
     def _recommended_kwh(self) -> float:
-        return round_up_to_standard_size(self._required_kwh(), BATTERY_CAPACITY_TIERS_KWH) or 0.0
+        return self._design().battery_total_kwh
 
     def _recalculate(self) -> None:
-        night_kwh = self._nighttime_kwh()
+        design = self._design()
+        night_kwh = design.nighttime_kwh
         self.nighttime_context_label.text = f"Nighttime Consumption: {night_kwh:.2f} kWh"
 
-        recommended = self._recommended_kwh()
-        self.recommended_label.text = f"{recommended:.2f} kWh"
+        recommended = design.battery_total_kwh
+        self.recommended_label.text = f"{recommended:.2f} kWh" if design.feasible else "Design unavailable"
 
-        dod_pct = self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT)
+        dod_pct = design.effective_dod_pct
         usable_kwh = battery_usable_capacity_kwh(recommended, dod_pct)
         self.usable_capacity_label.text = f"Usable Battery Capacity: {usable_kwh:.2f} kWh"
 
-        app = MDApp.get_running_app()
-        app.state.battery_dod_pct = dod_pct
-        app.state.battery_efficiency_pct = self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT)
-        app.state.battery_voltage = self._float(self.voltage_field, DEFAULT_BATTERY_VOLTAGE)
-        app.state.battery_total_kwh = recommended
-        app.state.battery_usable_kwh = usable_kwh
+        self.voltage_label.text = (
+            f"Auto: {design.battery_voltage_class}, {design.battery_voltage:g} V nominal; "
+            f"{design.battery_module_count} x {design.battery_module_kwh:g} kWh modules.\n"
+            f"{design.battery_series_modules} in series x {design.battery_parallel_strings} strings. "
+            f"Charge/discharge limits: {design.max_battery_charge_kw:.2f} / {design.max_battery_discharge_kw:.2f} kW."
+            if design.storage_enabled else "No battery selected: storage disabled or no nighttime demand."
+        ) if design.feasible else design.error
 
     def get_report_data(self) -> dict:
-        dod_pct = self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT)
-        recommended = self._recommended_kwh()
+        design = self._design()
+        dod_pct = design.effective_dod_pct
+        recommended = design.battery_total_kwh
         return {
             "dod_pct": dod_pct,
             "efficiency_pct": self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT),
             "required_kwh": self._required_kwh(),
-            "voltage": self._float(self.voltage_field, DEFAULT_BATTERY_VOLTAGE),
+            "voltage": design.battery_voltage,
             "total_kwh": recommended,
             "usable_kwh": battery_usable_capacity_kwh(recommended, dod_pct),
+            "module_kwh": design.battery_module_kwh,
+            "module_count": design.battery_module_count,
+            "series_modules": design.battery_series_modules,
+            "parallel_strings": design.battery_parallel_strings,
+            "voltage_class": design.battery_voltage_class,
+            "model": design.battery_model,
+            "charge_current_a": design.battery_charge_current_a,
+            "discharge_current_a": design.battery_discharge_current_a,
+            "storage_enabled": design.storage_enabled,
+            "equipment": design.as_dict(),
+            "selection_error": design.error,
         }
 
     def collect_state(self) -> dict:
+        design = self._design()
         return {
             "dod_pct": self._float(self.dod_field, DEFAULT_BATTERY_DOD_PCT),
             "efficiency_pct": self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT),
-            "voltage": self._float(self.voltage_field, DEFAULT_BATTERY_VOLTAGE),
+            "voltage": design.battery_voltage,
+            "storage_enabled": design.storage_enabled,
+            "selection_error": design.error,
         }
 
     def apply_state(self, data: dict) -> None:
-        self.dod_field.text = f"{data.get('dod_pct', DEFAULT_BATTERY_DOD_PCT):.1f}"
-        self.efficiency_field.text = f"{data.get('efficiency_pct', DEFAULT_BATTERY_EFFICIENCY_PCT):.1f}"
-        self.voltage_field.text = f"{data.get('voltage', DEFAULT_BATTERY_VOLTAGE):.1f}"
+        self.dod_field.text = f"{finite_float_or(data.get('dod_pct'), DEFAULT_BATTERY_DOD_PCT):.6f}"
+        self.efficiency_field.text = f"{finite_float_or(data.get('efficiency_pct'), DEFAULT_BATTERY_EFFICIENCY_PCT):.6f}"
         self._recalculate()
 
     def _show_calculation(self) -> None:
@@ -183,12 +210,14 @@ class BatteryScreen(MDScreen):
         efficiency_pct = self._float(self.efficiency_field, DEFAULT_BATTERY_EFFICIENCY_PCT)
         required_kwh = self._required_kwh()
         recommended = self._recommended_kwh()
+        design = self._design()
         text = (
-            "Required Battery Capacity = Nighttime Consumption / Battery DOD / Battery Efficiency\n\n"
-            f"= {night_kwh:.2f} kWh / {dod_pct:.0f}% / {efficiency_pct:.0f}%\n"
+            "Required Battery = profile's nighttime load / allowed DOD / battery efficiency / inverter efficiency.\n\n"
+            f"Night load: {night_kwh:.2f} kWh; requested DOD: {dod_pct:.0f}%; battery efficiency: {efficiency_pct:.0f}%.\n"
             f"= {required_kwh:.2f} kWh\n\n"
-            f"Rounded up to the nearest available spec = {recommended:.2f} kWh"
-        )
+            f"Compatible modules selected for capacity, voltage and current: {recommended:.2f} kWh.\n"
+            "Voltage is automatic: 24 V, 48 V or a compatible high-voltage series bank."
+        ) if design.feasible else design.error
         if self._dialog:
             self._dialog.dismiss()
         self._dialog = MDDialog(
@@ -207,5 +236,8 @@ class BatteryScreen(MDScreen):
         app.root.current = "about"
 
     def _go_next(self) -> None:
+        if not self._design().feasible:
+            self._show_calculation()
+            return
         app = MDApp.get_running_app()
         app.root.current = "system_design"

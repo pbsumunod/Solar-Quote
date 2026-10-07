@@ -1,567 +1,603 @@
-"""Google Play Billing integration for SolarQuote Pro subscriptions.
+"""Google Play Billing 9.x integration with resumable, bounded entitlements.
 
-Uses the Google Play Billing Library (via pyjnius) to query, purchase, and
-restore subscriptions. On Android, subscriptions are tied to the Google
-account used at purchase time -- no in-app login is needed. On reinstall,
-queryPurchasesAsync() restores the active subscription from Google Play.
-
-Falls back gracefully on non-Android platforms or when billing is unavailable
--- every Android call is wrapped so a billing failure never crashes the app,
-it just leaves the user on whatever tier database.get_tier() already knows
-about (see db/database.py's trial-aware logic).
-
-Two things a previous version of this file got wrong, worth calling out since
-they're easy to get wrong again:
-
-1. Google Play Billing Library callback interfaces (BillingClientStateListener,
-   PurchasesUpdatedListener, etc.) are Java interfaces. pyjnius does NOT let a
-   plain Python class satisfy one just by having same-named methods -- Java's
-   type system has no idea what to do with a bare Python object passed where
-   it expects a `BillingClientStateListener` instance. Each listener here is a
-   `jnius.PythonJavaClass` subclass declaring `__javainterfaces__` and
-   `@java_method(...)` signatures, which is what actually lets pyjnius build a
-   JNI-visible proxy implementing the interface. A previous version used plain
-   classes for all of these, so none of the callbacks could ever have fired.
-
-2. `com.android.billingclient:billing` was never listed in buildozer.spec's
-   `android.gradle_dependencies` at all, so every `autoclass("com.android.
-   billingclient...")` call below would have failed with a ClassNotFoundException
-   the moment it ran (caught here, so it fails quiet rather than crashing --
-   but real purchases could never have worked). Fixed alongside this file.
-
-This targets Billing Library 6.x's ProductDetails-based API (the SkuDetails-
-based API this file previously used was deprecated by Google in 2022 and
-Play Console has since required migrating off it). A specific version is
-pinned in buildozer.spec; if that's bumped to a newer major version later,
-re-check this file's method names against that version's release notes --
-Google has changed this API's shape more than once (e.g. v7 wraps
-onProductDetailsResponse's second argument in a QueryProductDetailsResult
-instead of passing the List directly).
-
-IMPORTANT: none of the Android-specific code paths in this file can be
-exercised outside a real device signed against a Play Console app with the
-subscription products below actually configured (license testing track) --
-there is no emulator/CI coverage for this. Treat this as carefully-reasoned
-best-effort against the documented API, not as verified-working, until it's
-been through an actual on-device purchase using Play's license testers.
+Purchase launch uses Android's UI thread; callbacks return to Kivy. Only a
+successful complete query may revoke access. An optional server verifies Play
+tokens and returns signed, token-bound offline entitlements (billing_config.py).
 """
 
+import json
 import logging
-from datetime import date, timedelta
+import re
+import secrets
+import threading
+import time
+import urllib.request
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 from kivy.utils import platform
 
-log = logging.getLogger(__name__)
+import billing_config as config
+import internet_time
+from billing_entitlements import verify_entitlement
+from network_utils import tls_context
 
+log = logging.getLogger(__name__)
 PRODUCT_ID_MONTHLY = "solarquote_pro_monthly"
 PRODUCT_ID_YEARLY = "solarquote_pro_yearly"
-
 TRIAL_DAYS = 7
-
 _SUBSCRIPTION_PRODUCTS = [PRODUCT_ID_MONTHLY, PRODUCT_ID_YEARLY]
+_RESPONSE_OK = 0
+_PURCHASED = 1
 
-_RESPONSE_OK = 0  # BillingClient.BillingResponseCode.OK
-_PURCHASED = 1  # Purchase.PurchaseState.PURCHASED (NOT 0 -- 0 is UNSPECIFIED_STATE;
-# a previous version of this file checked for 0, which meant a genuinely
-# purchased subscription could never actually register as active)
+
+def _period_label(period):
+    match = re.fullmatch(r"P(\d+)([DWMY])", period)
+    if not match:
+        return "the period shown in Google Play"
+    count = int(match[1])
+    unit = {"D": "day", "W": "week", "M": "month", "Y": "year"}[match[2]]
+    return f"{count} {unit}{'' if count == 1 else 's'}"
 
 
 class BillingManager:
-    """Manages Google Play Billing for SolarQuote Pro subscriptions."""
-
     def __init__(self):
         self._billing_client = None
         self._activity = None
         self._is_pro = False
         self._initialized = False
         self._connected = False
+        self._ever_connected = False
+        self._connecting = False
+        self._closed = False
         self._purchase_query_seq = 0
-        # ProductDetails + chosen subscription offer token, keyed by product
-        # id, populated once queryProductDetailsAsync succeeds. Needed to
-        # actually launch a purchase, and to show real store-configured
-        # prices instead of the hardcoded fallback strings.
+        self._product_query_seq = 0
+        self._purchase_generation = 0
         self._product_details = {}
-        # Every PythonJavaClass listener instance must be kept alive by a
-        # Python reference for as long as Java might call back into it --
-        # pyjnius doesn't pin them, so an unreferenced listener can be
-        # garbage-collected while Play Billing still expects to call it,
-        # silently dropping the callback. Stored here rather than as local
-        # variables in the methods that create them.
         self._listeners = {}
-        # Optional callback the app can set (see main.py): called with no
-        # args whenever a confirmed Play purchase changes the tier, so
-        # always-visible UI (the persistent plan label) can refresh itself
-        # without the user having to navigate somewhere that happens to
-        # re-read the tier on its own. May fire from a non-Kivy thread --
-        # this class does not assume anything about which thread calls it,
-        # so the callback itself is responsible for getting back onto
-        # Kivy's main thread before touching any widget.
+        self._ack_inflight = set()
+        self._timers = set()
+        self._expiry_event = None
+        self._state = None
+        self._state_lock = threading.RLock()
         self.on_tier_changed = None
 
-    # ------------------------------------------------------------------
-    # Classloader fix
-    # ------------------------------------------------------------------
+    def _state_path(self):
+        from db import database
+        if database.DB_PATH is None:
+            raise RuntimeError("Configure database before billing")
+        return Path(database.DB_PATH).parent / "billing_state.json"
 
-    def _ensure_classloader(self) -> None:
-        """Point the CURRENT thread's context classloader at the Activity's
-        own classloader, which can see this app's bundled third-party
-        classes (like anything under com.android.billingclient.api.*) --
-        confirmed via `adb logcat` to be necessary, not a defensive guess:
-        constructing a PythonJavaClass for PurchasesUpdatedListener threw
-        "java.lang.IllegalArgumentException: interface
-        com.android.billingclient.api.PurchasesUpdatedListener is not
-        visible from class loader" without this. Root cause: a thread that
-        attaches to the JVM (which is what happens under pyjnius) gets the
-        bootstrap classloader by default, which only knows core
-        java.*/android.* framework classes.
+    def _now(self):
+        now = int(internet_time.utcnow().timestamp())
+        with self._state_lock:
+            if self._state is not None:
+                now = max(now, int(self._state.get("last_seen", 0)))
+                self._state["last_seen"] = now
+        return now
 
-        Called at the top of every method that constructs a
-        PythonJavaClass, not just once at startup: Play Billing's own
-        callbacks (onBillingSetupFinished, onPurchasesUpdated, etc.) can
-        land on a different thread than the one that ran _init_android(),
-        most likely Android's actual UI thread rather than Kivy's own app
-        thread -- and that thread would hit the exact same error
-        independently the first time IT tries to construct a listener, if
-        this hadn't already been set for it. Cheap and idempotent, so
-        calling it defensively everywhere costs nothing.
-        """
-        try:
-            from jnius import autoclass
-            Thread = autoclass("java.lang.Thread")
-            Thread.currentThread().setContextClassLoader(self._activity.getClassLoader())
-        except Exception as exc:
-            log.warning("Could not set context classloader: %s", exc)
-
-    # ------------------------------------------------------------------
-    # Initialization
-    # ------------------------------------------------------------------
-
-    def initialize(self) -> None:
-        """Initialize the billing client. Call once at app startup."""
-        if self._initialized:
-            return
-        self._initialized = True
-
-        if platform != "android":
-            self._load_cached_tier()
-            return
-
-        try:
-            self._init_android()
-        except Exception:
-            # _init_android() logs exactly which construction step failed
-            # before re-raising -- this outer catch is only the final,
-            # generic fallback so a broken billing setup degrades to cached
-            # tier instead of crashing the app.
-            log.exception("Billing init failed")
-            self._load_cached_tier()
-
-    def _init_android(self) -> None:
-        # Every step below is its own try/except so a failure log names the
-        # exact stage instead of a single "something in _init_android broke"
-        # message with no way to tell which of six calls actually threw --
-        # this is otherwise impossible to debug without a full logcat
-        # session, and even then buried in noise.
-        def _stage(name, fn):
+    def _load_state(self):
+        with self._state_lock:
+            if self._state is not None:
+                return
             try:
-                return fn()
+                state = json.loads(self._state_path().read_text(encoding="utf-8"))
+                if not isinstance(state, dict) or not isinstance(state.get("pending_acks", {}), dict):
+                    raise ValueError("Invalid billing state")
+                if any(key in state and type(state[key]) is not int
+                       for key in ("valid_until", "last_seen")):
+                    raise ValueError("Invalid billing timestamps")
+                state.setdefault("pending_acks", {})
+                self._state = state
+            except (OSError, ValueError, TypeError):
+                self._state = {"pending_acks": {}, "last_seen": 0}
+
+    def _save_state(self):
+        with self._state_lock:
+            path = self._state_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_suffix(".tmp")
+            temporary.write_text(json.dumps(self._state), encoding="utf-8")
+            temporary.replace(path)
+
+    def _notify(self):
+        if self.on_tier_changed:
+            try:
+                self.on_tier_changed()
             except Exception:
-                log.exception("Billing init failed at stage: %s", name)
-                raise
+                log.exception("Could not refresh subscription display")
 
+    def _set_entitlement(self, active):
+        from db import database
+        previous = database.get_tier() == "pro"
+        self._is_pro = bool(active)
+        database.set_tier("pro" if active else "free")
+        database.set_pro_source("purchase" if active else None)
+        database.set_trial_end(None)
+        if previous != active:
+            self._notify()
+
+    def _load_cached_tier(self):
+        from db import database
+        self._load_state()
+        tier = database.get_tier()
+        if tier == "pro" and database.get_pro_source() == "purchase":
+            now = self._now()
+            expires = self._state.get("valid_until")
+            # One migration grace period for legacy local caches, never renewed
+            # by a failed query. Existing subscribers keep access while checking.
+            if expires is None:
+                expires = now + config.OFFLINE_GRACE_SECONDS
+                with self._state_lock:
+                    self._state["valid_until"] = expires
+                    self._save_state()
+            active = now < expires
+            if config.BACKEND_URL and self._state.get("signed_entitlement"):
+                try:
+                    claims = self._verify_signed(self._state["signed_entitlement"],
+                                                 self._state.get("purchase_token", ""))
+                    active = active and claims["active"]
+                except (ValueError, TypeError, KeyError):
+                    active = False
+            if not active:
+                self._set_entitlement(False)
+                return
+        self._is_pro = tier == "pro"
+        self._save_state()
+
+    def initialize(self):
+        if self._initialized or self._closed:
+            return
+        self._load_cached_tier()
+        self._initialized = True
+        from kivy.clock import Clock
+        if self._expiry_event is None:
+            self._expiry_event = Clock.schedule_interval(self._check_expiry, 60)
+        if platform == "android":
+            try:
+                self._init_android()
+            except Exception:
+                self._initialized = False
+                log.exception("Billing initialization unavailable")
+
+    def _check_expiry(self, _dt=0):
+        if self._closed:
+            return False
+        self._load_cached_tier()
+        internet_time.init()
+        return True
+
+    def _ensure_classloader(self):
         from jnius import autoclass
+        autoclass("java.lang.Thread").currentThread().setContextClassLoader(self._activity.getClassLoader())
 
-        PythonActivity = _stage("autoclass(PythonActivity)",
-                                 lambda: autoclass("org.kivy.android.PythonActivity"))
-        self._activity = _stage("PythonActivity.mActivity", lambda: PythonActivity.mActivity)
-
-        # See _ensure_classloader()'s docstring -- confirmed via `adb
-        # logcat` this is required before constructing any listener below,
-        # not a defensive guess.
-        _stage("_ensure_classloader", self._ensure_classloader)
-
-        BillingClient = _stage(
-            "autoclass(BillingClient)",
-            lambda: autoclass("com.android.billingclient.api.BillingClient"),
-        )
-        PendingPurchasesParams = _stage(
-            "autoclass(PendingPurchasesParams)",
-            lambda: autoclass("com.android.billingclient.api.PendingPurchasesParams"),
-        )
-
-        # PurchasesUpdatedListener is set once, at build time -- it's how
-        # Play reports the result of every launchBillingFlow() call, not
-        # something queried per-purchase like the other listeners below.
-        self._listeners["purchases_updated"] = _stage(
-            "construct PurchasesUpdatedListener", lambda: _PurchasesUpdatedListener(self),
-        )
-
-        builder = _stage("BillingClient.newBuilder", lambda: BillingClient.newBuilder(self._activity))
-        builder = _stage(
-            "builder.setListener", lambda: builder.setListener(self._listeners["purchases_updated"]),
-        )
-        # enablePendingPurchases() is documented as optional (only
-        # setListener() is required for build() to succeed) but every
-        # subscription this app sells needs it to actually be purchasable,
-        # so it's still called unconditionally here -- not a mandatory
-        # build() precondition, just a real functional requirement.
-        # enableOneTimeProducts() -- matches Google's own official
-        # subscriptions sample (play-billing-samples/subscriptions)
-        # verbatim, even though this app sells no one-time products: an
-        # empty PendingPurchasesParams isn't a documented, confirmed-valid
-        # config, and the sample calls this unconditionally, so matching it
-        # exactly removes the guesswork rather than trusting an assumption
-        # that empty params would also work.
-        pending_params = _stage(
-            "PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()",
-            lambda: PendingPurchasesParams.newBuilder().enableOneTimeProducts().build(),
-        )
-        builder = _stage("builder.enablePendingPurchases", lambda: builder.enablePendingPurchases(pending_params))
-        # Also from the official sample, and directly relevant to the
-        # "not_connected" failures this is fixing: opts into the Billing
-        # Library automatically reconnecting to the Play Store service if
-        # the connection drops, instead of silently staying disconnected
-        # until something explicitly calls startConnection() again.
-        builder = _stage("builder.enableAutoServiceReconnection", builder.enableAutoServiceReconnection)
-        self._billing_client = _stage("builder.build", builder.build)
-
+    def _init_android(self):
+        from jnius import autoclass
+        self._activity = autoclass("org.kivy.android.PythonActivity").mActivity
+        self._ensure_classloader()
+        client = autoclass("com.android.billingclient.api.BillingClient")
+        pending = autoclass("com.android.billingclient.api.PendingPurchasesParams")
+        self._listeners["purchases_updated"] = _PurchasesUpdatedListener(self)
+        self._billing_client = (client.newBuilder(self._activity)
+            .setListener(self._listeners["purchases_updated"])
+            .enablePendingPurchases(pending.newBuilder().enableOneTimeProducts().build())
+            .enableAutoServiceReconnection().build())
         self._connect()
 
-    # ------------------------------------------------------------------
-    # Connection
-    # ------------------------------------------------------------------
+    def _connect(self):
+        if self._closed or self._connecting or not self._billing_client:
+            return
+        self._connecting = True
+        try:
+            self._ensure_classloader()
+            self._listeners["connect"] = _ConnectListener(self)
+            self._billing_client.startConnection(self._listeners["connect"])
+        except Exception:
+            self._connecting = False
+            log.warning("Billing connection unavailable")
+        # Release a stalled initial connection so a later resume/user action can retry.
+        self._schedule(10, lambda: setattr(self, "_connecting", False))
 
-    def _connect(self) -> None:
-        self._ensure_classloader()
-        self._listeners["connect"] = _ConnectListener(self)
-        self._billing_client.startConnection(self._listeners["connect"])
-        # startConnection() doesn't raise on its own if the connection
-        # attempt just never completes -- onBillingSetupFinished/
-        # onBillingServiceDisconnected simply never fire, with nothing to
-        # except. That's indistinguishable from "still connecting" without
-        # a timeout, so this fires once, diagnostically, if a purchase gets
-        # attempted well after startConnection() with no callback ever
-        # having landed -- it doesn't retry or change behavior on its own.
-        import threading
-
-        def _check_stalled():
-            if not self._connected:
-                log.warning(
-                    "Billing startConnection() called but no "
-                    "onBillingSetupFinished/onBillingServiceDisconnected callback "
-                    "has fired after 10s -- either the PurchasesUpdatedListener/"
-                    "ConnectListener PythonJavaClass proxies aren't being "
-                    "recognized as valid Java interface implementations, or Play "
-                    "Store/Play Services isn't responding on this device."
-                )
-
-        threading.Timer(10.0, _check_stalled).start()
-
-    def _on_connected(self) -> None:
+    def _on_connected(self):
+        self._connecting = False
         self._connected = True
+        self._ever_connected = True
         self._query_purchases()
         self._query_product_details()
+        self._retry_acknowledgements()
 
-    def _on_disconnected(self) -> None:
+    def _on_disconnected(self):
         self._connected = False
+        self._connecting = False
 
-    # ------------------------------------------------------------------
-    # Purchase query (entitlement check -- runs on every connect, i.e.
-    # every cold start)
-    # ------------------------------------------------------------------
+    def refresh_on_resume(self):
+        if self._closed:
+            return
+        internet_time.init()
+        self._load_cached_tier()
+        if platform != "android":
+            return
+        if not self._billing_client:
+            self.initialize()
+        elif self._ever_connected:
+            # Make the API call even after disconnection: that is what triggers
+            # BillingClient's automatic service reconnection.
+            self._query_purchases()
+            self._query_product_details()
+            self._retry_acknowledgements()
+        else:
+            self._connect()
 
-    def _query_purchases(self, on_complete=None) -> None:
-        """Query active subscriptions from Google Play."""
-        if not self._connected or not self._billing_client:
+    def close(self):
+        self._closed = True
+        if self._expiry_event:
+            self._expiry_event.cancel()
+        for timer in list(self._timers):
+            timer.cancel()
+        if self._billing_client:
+            try:
+                self._billing_client.endConnection()
+            except Exception:
+                log.warning("Could not close billing connection")
+        self._listeners.clear()
+
+    def _schedule(self, delay, fn):
+        def run():
+            try:
+                if not self._closed:
+                    fn()
+            finally:
+                self._timers.discard(timer)
+        timer = threading.Timer(delay, run)
+        timer.daemon = True
+        self._timers.add(timer)
+        timer.start()
+
+    def _query_purchases(self, on_complete=None, attempt=0):
+        if not self._billing_client:
             self._load_cached_tier()
             if on_complete:
                 on_complete(None)
             return
-
         try:
             self._ensure_classloader()
             from jnius import autoclass
-
-            QueryPurchasesParams = autoclass(
-                "com.android.billingclient.api.QueryPurchasesParams"
-            )
-
-            # BillingClient.ProductType is a nested Java *interface*, not a
-            # field -- pyjnius's autoclass() doesn't expose nested
-            # classes/interfaces as plain attributes the way it does static
-            # fields, so `BillingClient.ProductType.SUBS` failed with
-            # "type object 'BillingClient' has no attribute 'ProductType'"
-            # (confirmed via `adb logcat`). setProductType() just takes the
-            # documented, stable literal string value directly ("subs" /
-            # "inapp") rather than adding another autoclass("...BillingClient
-            # $ProductType") lookup for one constant.
-            params = (QueryPurchasesParams.newBuilder()
-                      .setProductType("subs")
-                      .build())
+            params = autoclass("com.android.billingclient.api.QueryPurchasesParams").newBuilder().setProductType("subs").build()
             self._purchase_query_seq += 1
-            listener_key = f"query_purchases_{self._purchase_query_seq}"
-
-            def _handle_result(result, purchases):
-                try:
-                    self._on_purchases_queried(result, purchases, on_complete)
-                finally:
-                    self._listeners.pop(listener_key, None)
-
-            self._listeners[listener_key] = _PurchasesResponseListener(self, _handle_result)
-            self._billing_client.queryPurchasesAsync(params, self._listeners[listener_key])
-        except Exception as exc:
-            log.warning("queryPurchasesAsync failed: %s", exc)
-            if "listener_key" in locals():
-                self._listeners.pop(listener_key, None)
+            sequence = self._purchase_query_seq
+            generation = self._purchase_generation
+            key = f"query_{sequence}"
+            def result_callback(result, purchases):
+                self._listeners.pop(key, None)
+                if self._closed or sequence != self._purchase_query_seq:
+                    if on_complete:
+                        on_complete(None)
+                    return
+                if result.getResponseCode() in (-1, 2, 6, 12) and attempt < 2:
+                    self._schedule(2 ** attempt, lambda: self._query_purchases(on_complete, attempt + 1))
+                    return
+                # An older snapshot must not undo a purchase completed since the query began.
+                if generation != self._purchase_generation:
+                    self._query_purchases(on_complete)
+                    return
+                self._on_purchases_queried(result, purchases, on_complete)
+            self._listeners[key] = _PurchasesResponseListener(self, result_callback)
+            self._billing_client.queryPurchasesAsync(params, self._listeners[key])
+        except Exception:
+            if "key" in locals():
+                self._listeners.pop(key, None)
             self._load_cached_tier()
             if on_complete:
                 on_complete(None)
 
-    def _on_purchases_queried(self, billing_result, purchases_list, on_complete=None) -> None:
+    def _on_purchases_queried(self, billing_result, purchases_list, on_complete=None):
         if billing_result.getResponseCode() != _RESPONSE_OK:
-            log.warning("Query purchases failed: %s", billing_result.getDebugMessage())
             self._load_cached_tier()
             if on_complete:
                 on_complete(None)
             return
-        found = self._process_purchases(purchases_list)
-        if on_complete:
-            on_complete(found)
+        if config.BACKEND_URL:
+            self._process_purchases(purchases_list, on_complete=on_complete)
+        else:
+            found = self._process_purchases(purchases_list)
+            if on_complete:
+                on_complete(found)
 
-    def _process_purchases(self, purchases_list) -> bool | None:
-        """Process the list of purchases returned by Google Play.
-
-        A successful query is authoritative for Play-managed entitlements.
-        An empty result revokes a cached Play purchase, including a Play free
-        trial that ended without renewal. Local desktop trials are preserved.
-        Query errors never reach this method and continue to use the cache.
-        """
+    def _process_purchases(self, purchases_list, authoritative=True, on_complete=None):
         from db import database
-
-        active_purchase = None
-        if purchases_list is not None:
-            try:
+        self._load_state()
+        try:
+            purchases = []
+            if purchases_list is not None:
                 for i in range(purchases_list.size()):
                     purchase = purchases_list.get(i)
-                    if purchase.getPurchaseState() != _PURCHASED:
-                        continue
-                    products = purchase.getProducts()  # List<String>; getSkus() is the old v4 name
-                    product_ids = [products.get(j) for j in range(products.size())]
-                    if any(pid in _SUBSCRIPTION_PRODUCTS for pid in product_ids):
-                        active_purchase = purchase
-                        break
-            except Exception as exc:
-                log.warning("Error processing purchases: %s", exc)
-                self._load_cached_tier()
+                    if purchase.getPurchaseState() == _PURCHASED:
+                        products = purchase.getProducts()
+                        if any(products.get(j) in _SUBSCRIPTION_PRODUCTS for j in range(products.size())):
+                            purchases.append(purchase)
+        except Exception:
+            self._load_cached_tier()
+            if on_complete:
+                on_complete(None)
+            return None
+        if purchases:
+            with self._state_lock:
+                owned_tokens = {purchase.getPurchaseToken() for purchase in purchases}
+                acknowledged = {purchase.getPurchaseToken() for purchase in purchases
+                                if purchase.isAcknowledged()}
+                stale = {token for token in self._state["pending_acks"]
+                         if token in acknowledged or (authoritative and token not in owned_tokens)}
+                for token in stale:
+                    self._state["pending_acks"].pop(token, None)
+                if stale:
+                    self._save_state()
+            self._purchase_generation += 1
+            if config.BACKEND_URL:
+                generation = self._purchase_generation
+                threading.Thread(target=self._verify_purchases,
+                    args=(purchases, on_complete, generation), daemon=True).start()
                 return None
-
-        if active_purchase is not None:
-            # A confirmed real purchase always wins over -- and clears -- any
-            # leftover trial state, so a subscriber is never later downgraded
-            # by an old trial_end date (see database.get_tier()).
-            was_pro = self._is_pro
-            self._is_pro = True
-            database.set_pro_source("purchase")
-            database.set_trial_end(None)
-            self._save_tier_to_db(True)
-            if not active_purchase.isAcknowledged():
-                self._acknowledge(active_purchase)
-            if not was_pro and self.on_tier_changed:
-                try:
-                    self.on_tier_changed()
-                except Exception as exc:
-                    log.warning("on_tier_changed callback failed: %s", exc)
-        else:
-            source = database.get_pro_source()
-            if source == "trial":
-                was_pro = self._is_pro
+            self._load_state()
+            with self._state_lock:
+                self._state["valid_until"] = self._now() + config.OFFLINE_GRACE_SECONDS
+                self._save_state()
+            self._set_entitlement(True)
+            for purchase in purchases:
+                if not purchase.isAcknowledged():
+                    self._acknowledge(purchase)
+            return True
+        if authoritative:
+            self._purchase_generation += 1
+            if database.get_pro_source() == "trial":
                 self._load_cached_tier()
-                changed = was_pro != self._is_pro
             else:
-                was_entitled = self._is_pro or database.get_tier() == "pro"
-                self._is_pro = False
-                database.set_tier("free")
-                database.set_pro_source(None)
-                database.set_trial_end(None)
-                changed = was_entitled
+                self._load_state()
+                with self._state_lock:
+                    self._state.pop("signed_entitlement", None)
+                    self._state.pop("purchase_token", None)
+                    self._state.pop("valid_until", None)
+                    self._state["pending_acks"] = {}
+                    self._save_state()
+                self._set_entitlement(False)
+        if on_complete:
+            on_complete(False if authoritative else None)
+        return False
 
-            if changed and self.on_tier_changed:
-                try:
-                    self.on_tier_changed()
-                except Exception as exc:
-                    log.warning("on_tier_changed callback failed: %s", exc)
-        return active_purchase is not None
+    def _verify_signed(self, token, purchase_token, nonce=None):
+        claims = verify_entitlement(token, modulus_hex=config.PUBLIC_KEY_MODULUS_HEX,
+            exponent=config.PUBLIC_KEY_EXPONENT, audience=config.PACKAGE_NAME,
+            purchase_token=purchase_token, now=self._now(),
+            max_lifetime=config.OFFLINE_GRACE_SECONDS, nonce=nonce,
+            fresh_response=nonce is not None)
+        if nonce is not None:
+            internet_time.set_verified_time(datetime.fromtimestamp(claims["iat"], timezone.utc))
+            with self._state_lock:
+                self._state["last_seen"] = claims["iat"]
+        return claims
 
-    # ------------------------------------------------------------------
-    # Acknowledgement -- Google auto-refunds any subscription purchase not
-    # acknowledged within 3 days, so this has to happen for every purchase,
-    # not just ones made in the current app session.
-    # ------------------------------------------------------------------
+    def _verify_purchases(self, purchases, on_complete=None, generation=None):
+        self._load_state()
+        results = []
+        failed = False
+        for purchase in purchases:
+            token = purchase.getPurchaseToken()
+            nonce = secrets.token_urlsafe(24)
+            try:
+                if not config.BACKEND_URL.startswith("https://"):
+                    raise ValueError("Verification requires HTTPS")
+                request = urllib.request.Request(config.BACKEND_URL.rstrip("/") + "/verify",
+                    data=json.dumps({"purchase_token": token, "nonce": nonce}).encode(),
+                    headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(request, timeout=10, context=tls_context()) as response:
+                    signed = json.loads(response.read(32768))["entitlement"]
+                claims = self._verify_signed(signed, token, nonce)
+                results.append((claims, signed, token, purchase))
+            except Exception:
+                # Never log tokens, response bodies or service credential errors.
+                failed = True
+                log.warning("Purchase verification unavailable")
+        if self._closed or (generation is not None and generation != self._purchase_generation):
+            if on_complete:
+                on_complete(None)
+            return
+        active = [result for result in results if result[0]["active"]]
+        if active:
+            claims, signed, token, _purchase = max(active, key=lambda item: item[0]["exp"])
+            self._load_state()
+            with self._state_lock:
+                self._state.update(valid_until=claims["exp"], signed_entitlement=signed, purchase_token=token)
+                self._save_state()
+            self._set_entitlement(True)
+            for _, _, _, purchase in active:
+                if not purchase.isAcknowledged():
+                    self._acknowledge(purchase)
+        elif failed:
+            self._load_cached_tier()
+        else:
+            with self._state_lock:
+                self._state.pop("signed_entitlement", None)
+                self._state.pop("purchase_token", None)
+                self._state.pop("valid_until", None)
+                self._save_state()
+            self._set_entitlement(False)
+        if on_complete:
+            on_complete(True if active else None if failed else False)
 
-    def _acknowledge(self, purchase) -> None:
+    def _acknowledge(self, purchase):
+        self._load_state()
+        token = purchase.getPurchaseToken()
+        with self._state_lock:
+            self._state["pending_acks"].setdefault(token, 0)
+            self._save_state()
+        self._acknowledge_token(token)
+
+    def _retry_acknowledgements(self):
+        self._load_state()
+        with self._state_lock:
+            tokens = list(self._state["pending_acks"])
+        for token in tokens:
+            self._acknowledge_token(token)
+
+    def _acknowledge_token(self, token):
+        if self._closed or not self._billing_client:
+            return
+        self._load_state()
+        with self._state_lock:
+            if token not in self._state["pending_acks"] or token in self._ack_inflight:
+                return
+            self._ack_inflight.add(token)
+        key = f"ack_{token}"
         try:
             self._ensure_classloader()
             from jnius import autoclass
+            params = autoclass("com.android.billingclient.api.AcknowledgePurchaseParams").newBuilder().setPurchaseToken(token).build()
+            def complete(result):
+                self._listeners.pop(key, None)
+                with self._state_lock:
+                    self._ack_inflight.discard(token)
+                    if token not in self._state["pending_acks"]:
+                        return  # A newer full restore already reconciled it.
+                    if result.getResponseCode() == _RESPONSE_OK:
+                        self._state["pending_acks"].pop(token, None)
+                    else:
+                        attempt = self._state["pending_acks"].get(token, 0) + 1
+                        self._state["pending_acks"][token] = attempt
+                        # Persistent queue survives process termination. Resume retries.
+                        if result.getResponseCode() in (-1, 2, 6, 12) and attempt <= 5:
+                            self._schedule(min(300, 2 ** attempt), lambda: self._acknowledge_token(token))
+                    self._save_state()
+            self._listeners[key] = _AcknowledgeListener(complete)
+            self._billing_client.acknowledgePurchase(params, self._listeners[key])
+        except Exception:
+            self._ack_inflight.discard(token)
+            self._listeners.pop(key, None)
+            log.warning("Purchase acknowledgement unavailable; queued for retry")
+            self._schedule(10, lambda: self._acknowledge_token(token))
 
-            AcknowledgePurchaseParams = autoclass(
-                "com.android.billingclient.api.AcknowledgePurchaseParams"
-            )
-            params = (AcknowledgePurchaseParams.newBuilder()
-                      .setPurchaseToken(purchase.getPurchaseToken())
-                      .build())
-            listener = _AcknowledgeListener()
-            self._listeners[f"ack_{purchase.getPurchaseToken()}"] = listener
-            self._billing_client.acknowledgePurchase(params, listener)
-        except Exception as exc:
-            log.warning("acknowledgePurchase failed: %s", exc)
-
-    # ------------------------------------------------------------------
-    # Product details (prices + the offer token a purchase needs)
-    # ------------------------------------------------------------------
-
-    def _query_product_details(self) -> None:
-        if not self._connected or not self._billing_client:
+    def _query_product_details(self):
+        if not self._billing_client or self._closed:
             return
         try:
             self._ensure_classloader()
             from jnius import autoclass
-
-            QueryProductDetailsParams = autoclass(
-                "com.android.billingclient.api.QueryProductDetailsParams"
-            )
-            Product = autoclass(
-                "com.android.billingclient.api.QueryProductDetailsParams$Product"
-            )
-            ArrayList = autoclass("java.util.ArrayList")
-
-            # See _query_purchases()'s identical fix -- ProductType is a
-            # nested interface, not a field, so BillingClient.ProductType
-            # isn't accessible via autoclass() the way this originally
-            # assumed. "subs" is the documented, stable literal value.
-            product_list = ArrayList()
+            query = autoclass("com.android.billingclient.api.QueryProductDetailsParams")
+            product = autoclass("com.android.billingclient.api.QueryProductDetailsParams$Product")
+            products = autoclass("java.util.ArrayList")()
             for product_id in _SUBSCRIPTION_PRODUCTS:
-                product_list.add(
-                    Product.newBuilder()
-                    .setProductId(product_id)
-                    .setProductType("subs")
-                    .build()
-                )
+                products.add(product.newBuilder().setProductId(product_id).setProductType("subs").build())
+            self._product_query_seq += 1
+            sequence = self._product_query_seq
+            key = f"products_{sequence}"
+            def complete(result, query_result):
+                self._listeners.pop(key, None)
+                if not self._closed and sequence == self._product_query_seq:
+                    self._on_product_details(result, query_result)
+            self._listeners[key] = _ProductDetailsResponseListener(self, complete)
+            self._billing_client.queryProductDetailsAsync(query.newBuilder().setProductList(products).build(), self._listeners[key])
+        except Exception:
+            if "key" in locals():
+                self._listeners.pop(key, None)
+            log.warning("Subscription details unavailable")
 
-            params = (QueryProductDetailsParams.newBuilder()
-                      .setProductList(product_list)
-                      .build())
-            self._listeners["product_details"] = _ProductDetailsResponseListener(
-                self, self._on_product_details
-            )
-            self._billing_client.queryProductDetailsAsync(params, self._listeners["product_details"])
-        except Exception as exc:
-            log.warning("queryProductDetailsAsync failed: %s", exc)
-
-    def _on_product_details(self, billing_result, query_result) -> None:
-        if billing_result.getResponseCode() != _RESPONSE_OK or query_result is None:
-            log.warning("Product details fetch failed: %s", billing_result.getDebugMessage())
+    def _on_product_details(self, result, query_result):
+        if result.getResponseCode() != _RESPONSE_OK or query_result is None:
             return
-        try:
-            # query_result is a QueryProductDetailsResult (Billing Library
-            # 8.0+), not the plain List<ProductDetails> older versions
-            # passed directly -- unwrap it. Any product listed in
-            # getUnfetchedProductList() (e.g. a product ID with no active
-            # base plan in Play Console) simply won't appear in
-            # self._product_details afterward, which launch_purchase()
-            # already treats as "not ready yet" -- no separate handling
-            # needed for the unfetched list itself.
-            product_details_list = query_result.getProductDetailsList()
-            for i in range(product_details_list.size()):
-                details = product_details_list.get(i)
-                offers = details.getSubscriptionOfferDetails()
-                if offers is None or offers.size() == 0:
-                    continue
-                # A base plan can have multiple pricing phases (e.g. a
-                # store-configured intro/trial phase followed by the ongoing
-                # price) -- the LAST phase is the recurring price, which is
-                # what should be shown/relied on, not whatever the first
-                # (possibly discounted or free) phase happens to be.
-                offer = offers.get(0)
+        self._product_details = {}
+        details_list = query_result.getProductDetailsList()
+        for i in range(details_list.size()):
+            details = details_list.get(i)
+            offers = details.getSubscriptionOfferDetails()
+            parsed = []
+            if offers is None:
+                continue
+            for j in range(offers.size()):
+                offer = offers.get(j)
                 phases = offer.getPricingPhases().getPricingPhaseList()
-                last_phase = phases.get(phases.size() - 1)
-                self._product_details[details.getProductId()] = {
-                    "details": details,
-                    "offer_token": offer.getOfferToken(),
-                    "formatted_price": last_phase.getFormattedPrice(),
-                }
-        except Exception as exc:
-            log.warning("Error reading product details: %s", exc)
+                if not phases.size():
+                    continue
+                recurring = phases.get(phases.size() - 1)
+                # Only sell the actual monthly/yearly cadence advertised here.
+                expected_periods = {"P1M"} if details.getProductId() == PRODUCT_ID_MONTHLY else {"P1Y", "P12M"}
+                if recurring.getBillingPeriod() not in expected_periods or recurring.getRecurrenceMode() != 1:
+                    continue
+                first = phases.get(0)
+                trial_period = first.getBillingPeriod() if phases.size() > 1 and first.getPriceAmountMicros() == 0 else None
+                parsed.append({"details": details, "offer_token": offer.getOfferToken(),
+                    "offer_id": offer.getOfferId(), "formatted_price": recurring.getFormattedPrice(),
+                    "micros": recurring.getPriceAmountMicros(), "currency": recurring.getPriceCurrencyCode(),
+                    "period": recurring.getBillingPeriod(), "trial_period": trial_period,
+                    "phases": [{"price": phases.get(index).getFormattedPrice(),
+                        "micros": phases.get(index).getPriceAmountMicros(),
+                        "period": phases.get(index).getBillingPeriod(),
+                        "cycles": phases.get(index).getBillingCycleCount()}
+                        for index in range(phases.size())],
+                    "fetched_at": time.monotonic()})
+            if parsed:
+                # Ordinary Subscribe uses the base plan; Start Trial uses a
+                # distinct eligible zero-priced introductory offer.
+                selected = next((item for item in parsed if item["offer_id"] is None), parsed[0])
+                selected["trial_offer"] = next((item.copy() for item in parsed if item["trial_period"]), None)
+                self._product_details[details.getProductId()] = selected
 
-    # ------------------------------------------------------------------
-    # Purchase flow
-    # ------------------------------------------------------------------
+    def _dispatch_launch(self, fn):
+        from android.runnable import run_on_ui_thread
+        run_on_ui_thread(fn)()
 
-    def launch_purchase(self, product_id: str) -> str:
-        """Launch Google Play purchase flow for the given product.
+    def _deliver_launch(self, callback, reason):
+        if callback:
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda _dt: callback(reason), 0)
 
-        Returns "" on success (Play's own purchase sheet takes over from
-        here -- the actual grant happens later, asynchronously, via
-        _on_purchases_updated). Returns a short reason code on failure so
-        the caller can tell the user *why* nothing happened instead of the
-        button just silently doing nothing, which every one of these early
-        returns used to do.
-        """
+    def launch_purchase(self, product_id, on_complete=None, trial_only=False):
         if platform != "android":
+            self._deliver_launch(on_complete, "not_android")
             return "not_android"
-
-        if not self._connected or not self._billing_client or not self._activity:
-            log.warning("Billing not connected, cannot launch purchase")
+        if not self._billing_client or not self._activity:
+            self.refresh_on_resume()
+            self._deliver_launch(on_complete, "not_connected")
             return "not_connected"
-
         cached = self._product_details.get(product_id)
-        if not cached:
-            log.warning("No product details cached yet for %s -- retrying fetch", product_id)
+        if not cached or time.monotonic() - cached["fetched_at"] > 900:
             self._query_product_details()
+            self._deliver_launch(on_complete, "product_not_ready")
             return "product_not_ready"
-
+        offer = cached.get("trial_offer") if trial_only else cached
+        if not offer:
+            self._deliver_launch(on_complete, "trial_unavailable")
+            return "trial_unavailable"
+        def launch():
+            try:
+                from jnius import autoclass
+                flow = autoclass("com.android.billingclient.api.BillingFlowParams")
+                product = autoclass("com.android.billingclient.api.BillingFlowParams$ProductDetailsParams")
+                products = autoclass("java.util.ArrayList")()
+                products.add(product.newBuilder().setProductDetails(offer["details"]).setOfferToken(offer["offer_token"]).build())
+                result = self._billing_client.launchBillingFlow(self._activity, flow.newBuilder().setProductDetailsParamsList(products).build())
+                code = result.getResponseCode()
+                reason = {0: "", 1: "cancelled", 7: "already_owned", 4: "unavailable", -1: "not_connected"}.get(code, "launch_failed")
+                if code == 7:
+                    self._query_purchases()
+                self._deliver_launch(on_complete, reason)
+            except Exception:
+                log.warning("Purchase launch unavailable")
+                self._deliver_launch(on_complete, "launch_failed")
         try:
-            from jnius import autoclass
-
-            BillingFlowParams = autoclass("com.android.billingclient.api.BillingFlowParams")
-            ProductDetailsParams = autoclass(
-                "com.android.billingclient.api.BillingFlowParams$ProductDetailsParams"
-            )
-            ArrayList = autoclass("java.util.ArrayList")
-
-            product_params = (ProductDetailsParams.newBuilder()
-                               .setProductDetails(cached["details"])
-                               .setOfferToken(cached["offer_token"])
-                               .build())
-            params_list = ArrayList()
-            params_list.add(product_params)
-
-            flow_params = (BillingFlowParams.newBuilder()
-                           .setProductDetailsParamsList(params_list)
-                           .build())
-            self._billing_client.launchBillingFlow(self._activity, flow_params)
-            return ""
-        except Exception as exc:
-            log.warning("launchBillingFlow failed: %s", exc)
+            self._dispatch_launch(launch)
+            return "launch_pending"
+        except Exception:
+            self._deliver_launch(on_complete, "launch_failed")
             return "launch_failed"
 
-    def _on_purchases_updated(self, billing_result, purchases_list) -> None:
-        """Callback for the flow started by launch_purchase() -- Play reports
-        the result (success, user cancelled, already owned, etc.) here."""
-        if billing_result.getResponseCode() != _RESPONSE_OK:
-            log.info("Purchase flow ended: %s", billing_result.getDebugMessage())
+    def _on_purchases_updated(self, result, purchases):
+        if self._closed:
             return
-        self._process_purchases(purchases_list)
+        code = result.getResponseCode()
+        if code == _RESPONSE_OK and purchases is not None:
+            self._process_purchases(purchases, authoritative=False)
+        elif code == 7:
+            self._query_purchases()
 
-    # ------------------------------------------------------------------
-    # Restore
-    # ------------------------------------------------------------------
-
-    def restore_purchases(self, on_complete=None) -> bool | None:
-        """Re-query Play; report a confirmed purchase through on_complete.
-
-        Android's query is asynchronous, so an immediate cached tier is not a
-        reliable restore result. None means Play could not be queried.
-        """
+    def restore_purchases(self, on_complete=None):
         if platform != "android":
             self._load_cached_tier()
             from db import database
@@ -569,86 +605,73 @@ class BillingManager:
             if on_complete:
                 on_complete(found)
             return found
-
-        if self._connected and self._billing_client:
+        if self._billing_client:
             self._query_purchases(on_complete)
-            return None
-        log.warning("restore_purchases requested while billing is disconnected")
-        if on_complete:
-            on_complete(None)
+        else:
+            self.refresh_on_resume()
+            if on_complete:
+                on_complete(None)
         return None
 
-    # ------------------------------------------------------------------
-    # Tier helpers
-    # ------------------------------------------------------------------
-
-    def is_pro(self) -> bool:
+    def is_pro(self):
+        self._load_cached_tier()
         return self._is_pro
 
-    def set_pro(self, value: bool) -> None:
+    def set_pro(self, value):
         self._is_pro = value
-        self._save_tier_to_db(value)
-
-    def start_trial(self) -> None:
         from db import database
-        end = database.get_trusted_today() + timedelta(days=TRIAL_DAYS)
-        database.set_trial_end(end.isoformat())
+        database.set_tier("pro" if value else "free")
+
+    def start_trial(self):
+        if platform == "android":
+            raise RuntimeError("Android trials must be purchased through Play")
+        from db import database
+        if database.get_trial_end():
+            return
+        database.set_trial_end((database.get_trusted_today() + timedelta(days=TRIAL_DAYS)).isoformat())
         database.set_pro_source("trial")
         self.set_pro(True)
 
-    def has_active_trial(self) -> bool:
+    def has_active_trial(self):
+        return self.get_trial_days_left() > 0
+
+    def get_trial_days_left(self):
+        from db import database
         try:
-            from db import database
-            trial_end = database.get_trial_end()
-            if trial_end:
-                return database.get_trusted_today() <= date.fromisoformat(trial_end)
-        except (TypeError, ValueError):
-            pass
-        return False
+            return max(0, (date.fromisoformat(database.get_trial_end()) - database.get_trusted_today()).days)
+        except (ValueError, TypeError):
+            return 0
 
-    def get_trial_days_left(self) -> int:
-        try:
-            from db import database
-            trial_end = database.get_trial_end()
-            if trial_end:
-                return max(0, (date.fromisoformat(trial_end) - database.get_trusted_today()).days)
-        except (TypeError, ValueError):
-            pass
-        return 0
+    def get_monthly_price(self):
+        return self._product_details.get(PRODUCT_ID_MONTHLY, {}).get("formatted_price", "Loading price...")
 
-    # ------------------------------------------------------------------
-    # Local cache
-    # ------------------------------------------------------------------
+    def get_yearly_price(self):
+        return self._product_details.get(PRODUCT_ID_YEARLY, {}).get("formatted_price", "Loading price...")
 
-    def _load_cached_tier(self) -> None:
-        try:
-            from db import database
-            self._is_pro = database.get_tier() == "pro"
-        except Exception:
-            self._is_pro = False
+    def get_yearly_savings(self):
+        monthly = self._product_details.get(PRODUCT_ID_MONTHLY)
+        yearly = self._product_details.get(PRODUCT_ID_YEARLY)
+        if not monthly or not yearly or monthly["currency"] != yearly["currency"] or monthly["micros"] <= 0:
+            return ""
+        percentage = round(100 * (1 - yearly["micros"] / (12 * monthly["micros"])))
+        return f"Save {percentage}%" if percentage > 0 else ""
 
-    def _save_tier_to_db(self, is_pro: bool) -> None:
-        try:
-            from db import database
-            database.set_tier("pro" if is_pro else "free")
-        except Exception:
-            pass
-
-    # ------------------------------------------------------------------
-    # Price strings
-    # ------------------------------------------------------------------
-
-    def get_monthly_price(self) -> str:
-        cached = self._product_details.get(PRODUCT_ID_MONTHLY)
-        return cached["formatted_price"] if cached else "P299/month"
-
-    def get_yearly_price(self) -> str:
-        cached = self._product_details.get(PRODUCT_ID_YEARLY)
-        return cached["formatted_price"] if cached else "P2,990/year"
-
-    def get_yearly_savings(self) -> str:
-        return "Save 17%"
-
+    def get_trial_terms(self):
+        trial = self._product_details.get(PRODUCT_ID_MONTHLY, {}).get("trial_offer")
+        if not trial:
+            return None
+        terms = []
+        for phase in trial["phases"][:-1]:
+            duration = _period_label(phase["period"])
+            cycles = phase["cycles"]
+            if phase["micros"] == 0:
+                if cycles > 1:
+                    duration = f"{cycles} × {duration}"
+                terms.append(f"Free for {duration}")
+            else:
+                terms.append(f"{phase['price']} every {duration} for {cycles} payment(s)")
+        terms.append(f"{trial['formatted_price']} per month, renewing until cancelled")
+        return ", then ".join(terms) + "."
 
 # ----------------------------------------------------------------------
 # PythonJavaClass listener implementations.
@@ -698,7 +721,8 @@ def _lazy_pyjnius_classes():
             if billing_result.getResponseCode() == _RESPONSE_OK:
                 self._manager._on_connected()
             else:
-                log.warning("Billing setup failed: %s", billing_result.getDebugMessage())
+                self._manager._connecting = False
+                log.warning("Billing setup unavailable")
                 self._manager._load_cached_tier()
 
         @java_method("()V")
@@ -755,10 +779,13 @@ def _lazy_pyjnius_classes():
         __javainterfaces__ = ["com/android/billingclient/api/AcknowledgePurchaseResponseListener"]
         __javacontext__ = "app"
 
+        def __init__(self, callback):
+            super().__init__()
+            self._callback = callback
+
         @java_method(_billing_result_sig())
         def onAcknowledgePurchaseResponse(self, billing_result):
-            if billing_result.getResponseCode() != _RESPONSE_OK:
-                log.warning("acknowledgePurchase failed: %s", billing_result.getDebugMessage())
+            self._callback(billing_result)
 
     return {
         "connect": ConnectListener,
@@ -795,5 +822,5 @@ def _ProductDetailsResponseListener(manager, callback):  # noqa: N802
     return _get_java_classes()["product_details_response"](manager, callback)
 
 
-def _AcknowledgeListener():  # noqa: N802
-    return _get_java_classes()["acknowledge"]()
+def _AcknowledgeListener(callback):  # noqa: N802
+    return _get_java_classes()["acknowledge"](callback)

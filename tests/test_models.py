@@ -1,4 +1,5 @@
 from logic.models import Project
+import json
 
 
 class TestProjectDefaults:
@@ -31,6 +32,7 @@ class TestToFields:
             electricity_rate=12.0, country="Japan",
         )
         fields = project.to_fields()
+        assert json.loads(fields.pop("design_inputs")) == project.design_inputs()
         assert "id" not in fields
         assert fields == {
             "client_name": "Jane Doe",
@@ -68,3 +70,13 @@ class TestFromRow:
         }
         project = Project.from_row(row)
         assert project.country == ""
+
+
+def test_design_inputs_restore_with_legacy_defaults():
+    fields = Project(client_name="Design", peak_load_kw=2.1, storage_enabled=False, site_latitude=14.6,
+                     site_longitude=121, site_shading_pct=15).to_fields()
+    fields["id"] = 1
+    restored = Project.from_row(fields)
+    assert restored.peak_load_kw == 2.1
+    assert restored.storage_enabled is False
+    assert restored.site_shading_pct == 15

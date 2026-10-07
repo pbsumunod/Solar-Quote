@@ -9,6 +9,7 @@ edges. Redraws whenever the widget is resized or set_data() is called again.
 
 from kivy.graphics import Color, Ellipse, Line, Mesh
 from kivy.metrics import dp
+from kivy.properties import NumericProperty
 from kivy.uix.label import Label
 from kivy.uix.widget import Widget
 
@@ -38,6 +39,7 @@ def _y_reference_values(y_min: float, y_max: float, count: int = 4) -> list[floa
 
 
 class LineChart(Widget):
+    text_scale = NumericProperty(1)
     LEFT_MARGIN = dp(36)
     RIGHT_MARGIN = dp(34)
     TOP_MARGIN = dp(20)
@@ -51,11 +53,15 @@ class LineChart(Widget):
         self._hline: dict | None = None
         self._fill_index: int | None = None
         self._tick_labels: list[Label] = []
+        self._legend = []
+        self._x_unit = ""
+        self._y_unit = ""
         self.bind(pos=self._redraw, size=self._redraw)
 
     def set_data(self, series: list[tuple], x_labels: list[str],
                  vline: dict | None = None, fill_index: int | None = None,
-                 hline: dict | None = None) -> None:
+                 hline: dict | None = None, legend: list | None = None,
+                 x_unit: str = "", y_unit: str = "") -> None:
         """series: list of (values, color) or (values, color, dashed_bool).
         vline: {"x": float_index, "label": str, "color": (r,g,b,a)} for a dashed vertical marker line.
         hline: {"y": float, "label": str, "color": (r,g,b,a)} for a dashed horizontal marker line
@@ -66,6 +72,8 @@ class LineChart(Widget):
         self._vline = vline
         self._hline = hline
         self._fill_index = fill_index
+        self._legend = list(legend or [])
+        self._x_unit, self._y_unit = x_unit, y_unit
         self._redraw()
 
     def _clear_ticks(self) -> None:
@@ -79,10 +87,11 @@ class LineChart(Widget):
         if not self._series or self.width <= 1 or self.height <= 1:
             return
 
-        x0 = self.x + self.LEFT_MARGIN
-        x1 = self.x + self.width - self.RIGHT_MARGIN
-        y0 = self.y + self.BOTTOM_MARGIN
-        y1 = self.y + self.height - self.TOP_MARGIN
+        scale = self.text_scale
+        x0 = self.x + self.LEFT_MARGIN * scale
+        x1 = self.x + self.width - self.RIGHT_MARGIN * scale
+        y0 = self.y + (dp(42) if self._x_unit else self.BOTTOM_MARGIN) * scale
+        y1 = self.y + self.height - (dp(50) if self._legend else self.TOP_MARGIN) * scale
         plot_w = max(1.0, x1 - x0)
         plot_h = max(1.0, y1 - y0)
         n = len(self._x_labels)
@@ -151,7 +160,7 @@ class LineChart(Widget):
                 Line(points=[x0, hy, x1, hy], width=2.4, dash_length=10, dash_offset=6)
 
         for value in _y_reference_values(y_min + pad, y_max - pad):
-            text = f"{value:.0f}" if value == round(value) else f"{value:.1f}"
+            text = f"{value:,.0f}" if value == round(value) else f"{value:.3g}"
             ref_y = px(0, value)[1]
             for side in ("left", "right"):
                 self._add_y_label(text, x0 if side == "left" else x1, ref_y, side=side)
@@ -159,10 +168,10 @@ class LineChart(Widget):
         if self._vline is not None:
             vx = px(self._vline["x"], 0)[0]
             lbl = Label(
-                text=self._vline.get("label", ""), font_size="9sp",
+                text=self._vline.get("label", ""), font_size=dp(9) * scale,
                 color=self._vline.get("color", (0.4, 0.25, 0.6, 1)),
-                size_hint=(None, None), size=(dp(90), dp(14)),
-                pos=(vx - dp(10), y1 + dp(3)),
+                size_hint=(None, None), size=(dp(120) * scale, dp(14) * scale),
+                pos=(min(vx - dp(10), x1 - dp(120) * scale), y1 + dp(3)),
             )
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
@@ -170,9 +179,9 @@ class LineChart(Widget):
         if self._hline is not None:
             hy = px(0, self._hline["y"])[1]
             lbl = Label(
-                text=self._hline.get("label", ""), font_size="9sp", bold=True,
+                text=self._hline.get("label", ""), font_size=dp(9) * scale, bold=True,
                 color=self._hline.get("color", (0.4, 0.25, 0.6, 1)),
-                size_hint=(None, None), size=(dp(90), dp(14)), halign="left",
+                size_hint=(None, None), size=(dp(90) * scale, dp(14) * scale), halign="left",
                 pos=(x0 + dp(4), hy + dp(3)),
             )
             self.add_widget(lbl)
@@ -183,12 +192,29 @@ class LineChart(Widget):
                 continue
             fx, _fy = px(i, 0)
             lbl = Label(
-                text=label, font_size="9sp", color=(0.3, 0.3, 0.3, 1),
-                size_hint=(None, None), size=(dp(30), dp(14)),
-                pos=(fx - dp(15), y0 - dp(20)),
+                text=label, font_size=dp(9) * scale, color=(0.3, 0.3, 0.3, 1),
+                size_hint=(None, None), size=(dp(30) * scale, dp(14) * scale),
+                pos=(fx - dp(15) * scale, y0 - dp(20) * scale),
             )
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
+
+        if self._legend:
+            width = max(1, (x1 - x0) / len(self._legend))
+            for index, label in enumerate(self._legend):
+                color = self._series[index][1] if index < len(self._series) else AXIS_COLOR
+                text = ("-- " if index < len(self._series) and self._series[index][2] else "- ") + label
+                lbl = Label(text=text, font_size=dp(10) * scale, color=color,
+                            size_hint=(None, None), size=(width, dp(26) * scale),
+                            pos=(x0 + index * width, self.top - dp(28) * scale))
+                self.add_widget(lbl)
+                self._tick_labels.append(lbl)
+        for text, pos, size in ((self._x_unit, ((x0 + x1) / 2 - dp(40) * scale, self.y), (dp(80) * scale, dp(18) * scale)),
+                                (self._y_unit, (self.x, y1 + dp(3) * scale), (dp(36) * scale, dp(16) * scale))):
+            if text:
+                lbl = Label(text=text, font_size=dp(10) * scale, color=AXIS_COLOR, size_hint=(None, None), size=size, pos=pos)
+                self.add_widget(lbl)
+                self._tick_labels.append(lbl)
 
     def _draw_area_fill(self, pts: list[tuple[float, float]], y_zero: float) -> None:
         """Fills the area between the curve and the zero line as solid triangles
@@ -233,11 +259,11 @@ class LineChart(Widget):
         """y is the exact pixel height the value maps to on the plot -- the label
         is vertically centered on it."""
         lbl = Label(
-            text=text, font_size="9sp", color=(0.3, 0.3, 0.3, 1),
-            size_hint=(None, None), size=(dp(32), dp(14)),
+            text=text, font_size=dp(9) * self.text_scale, color=(0.3, 0.3, 0.3, 1),
+            size_hint=(None, None), size=(dp(32) * self.text_scale, dp(14) * self.text_scale),
             halign="right" if side == "left" else "left",
         )
-        x_offset = -dp(34) if side == "left" else dp(2)
-        lbl.pos = (x + x_offset, y - dp(7))
+        x_offset = (-dp(34) if side == "left" else dp(2)) * self.text_scale
+        lbl.pos = (x + x_offset, y - dp(7) * self.text_scale)
         self.add_widget(lbl)
         self._tick_labels.append(lbl)

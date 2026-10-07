@@ -8,9 +8,8 @@ buy/sell), and Battery (green, dashed) plotted as actual kWh held in the
 battery each hour (SOC% * total capacity), all on one kW-scaled axis -- and a
 summary row below it. The editable harvest table and the 3-scenario comparison
 table from the desktop version are dropped in favor of this simpler
-single-scenario view. Solar harvest is scaled by the client's country
-latitude -- see logic/geo_data.py. All simulation math is otherwise unchanged,
-from the ported logic/simulation.py.
+single-scenario view. Resource assumptions, losses and selected hardware limits
+feed the energy-conserving steady-state calculation in logic/simulation.py.
 """
 
 from kivy.metrics import dp
@@ -20,16 +19,18 @@ from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDFlatButton
+from kivymd.uix.dialog import MDDialog
 from kivymd.uix.label import MDLabel
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.selectioncontrol import MDCheckbox
 from kivymd.uix.textfield import MDTextField
 
-from logic.calculations import HOUR_LABELS, hourly_kwh_from_percentages
+from logic.calculations import HOUR_LABELS, default_hourly_percentages, hourly_kwh_from_percentages
 from logic.chart_series import DOD_FLOOR_COLOR, SERIES_COLORS, series_for_result
-from logic.geo_data import latitude_for_country, solar_latitude_factor
-from logic.quote_validation import finite_float_or
+from logic.equipment import calibrated_peak_sun_hours, refresh_equipment_design
+from logic.quote_validation import finite_float_or, live_float_or
 from logic.simulation import (
     DEFAULT_WEATHER_FACTORS,
     default_solar_harvest_pct,
@@ -54,10 +55,9 @@ class SimulationScreen(MDScreen):
         self.hourly_consumption_kwh = [0.0] * 24
         self.pv_capacity_kw = 0.0
         self.peak_sun_hours = 4.5
-        # Fixed at 100% -- see on_pre_enter. The Solar screen's user-editable
-        # efficiency still applies to sizing (how big a system to recommend);
-        # simulated/projected production always assumes full nameplate output.
-        self.system_efficiency_pct = 100.0
+        # The same PV loss assumption feeds sizing and simulation; inverter
+        # conversion losses are modeled separately from the catalog efficiency.
+        self.system_efficiency_pct = 80.0
         self.battery_total_kwh = 0.0
         self.battery_dod_pct = 80.0
         self.battery_efficiency_pct = 90.0
@@ -65,7 +65,7 @@ class SimulationScreen(MDScreen):
         self.max_battery_discharge_kw = 5.0
         self.harvest_pct = default_solar_harvest_pct()
         self.active_scenario = "Sunny"
-        self.latitude_factor = 1.0
+        self.last_error = ""
         self._scenario_menu: MDDropdownMenu | None = None
         self._weather_fields: dict[str, MDTextField] = {}
         self._retintable_fields: list[MDTextField] = []
@@ -114,6 +114,14 @@ class SimulationScreen(MDScreen):
             text="Enable Net Metering / Grid Export", theme_text_color="Custom", text_color=TEXT_DARK,
         ))
         form.add_widget(export_row)
+        self.assumption_label = MDLabel(
+            text="Solar and charging are DC kWh; load, imports and exports are AC kWh. Battery is stored kWh.",
+            font_style="Caption", theme_text_color="Custom", text_color=TEXT_DARK,
+            size_hint_y=None, height=dp(64),
+        )
+        self.assumption_label.bind(width=lambda inst, value: setattr(inst, "text_size", (value, None)),
+                                   texture_size=lambda inst, value: setattr(inst, "height", value[1] + dp(8)))
+        form.add_widget(self.assumption_label)
 
         form.add_widget(section_label("chart-line", "Simulation (6 AM - 6 AM)"))
         form.add_widget(self._build_legend())
@@ -196,52 +204,61 @@ class SimulationScreen(MDScreen):
             label.bg_color.rgba = tint
 
     def on_pre_enter(self, *_args) -> None:
+        self.big_bg.start()
+        self._recalculate()
+
+    def _sync_inputs(self):
         app = MDApp.get_running_app()
         state = app.state
+        design = refresh_equipment_design(state)
+        if not design.feasible:
+            raise ValueError(design.error)
         self.hourly_consumption_kwh = hourly_kwh_from_percentages(
-            state.project.monthly_kwh, state.hourly_pct or [0.0] * 24,
+            state.project.monthly_kwh, state.hourly_pct or default_hourly_percentages(state.project.daytime_ratio_pct),
         )
         self.pv_capacity_kw = state.solar_total_kw
         self.peak_sun_hours = state.peak_sun_hours
-        # Deliberately NOT state.efficiency_pct: the user's chosen efficiency still
-        # drives sizing (Solar screen's required kW / recommended array size), but
-        # simulated production, weather scenarios, and ROI all assume 100% -- the
-        # system is sized conservatively (with the loss derate) but shown producing
-        # at full nameplate output.
-        self.system_efficiency_pct = 100.0
+        # PV efficiency excludes inverter conversion and applies to every scenario.
+        self.system_efficiency_pct = state.efficiency_pct
         self.battery_total_kwh = state.battery_total_kwh
-        self.battery_dod_pct = state.battery_dod_pct
+        self.battery_dod_pct = design.effective_dod_pct
         self.battery_efficiency_pct = state.battery_efficiency_pct
         self.max_battery_charge_kw = state.inverter_max_battery_charge_kw
         self.max_battery_discharge_kw = state.inverter_max_battery_discharge_kw
 
-        latitude = latitude_for_country(state.project.country)
-        self.latitude_factor = solar_latitude_factor(latitude) if latitude is not None else 1.0
-
-        self.big_bg.start()
-        self._recalculate()
+        return state, design
 
     def on_leave(self, *_args) -> None:
         self.big_bg.stop()
 
     def _float(self, field: MDTextField, default: float = 0.0) -> float:
-        return finite_float_or(field.text, default)
+        return live_float_or(field.text, default)
 
-    def _run_for_factor(self, weather_factor_pct: float):
+    def _run_for_factor(self, weather_factor_pct: float, peak_sun_hours: float | None = None,
+                        *, pv_capacity_factor: float = 1.0, battery_capacity_factor: float = 1.0):
+        state, design = self._sync_inputs()
+        hours = calibrated_peak_sun_hours(
+            self.peak_sun_hours if peak_sun_hours is None else peak_sun_hours,
+            state.weather_factors, state.weather_mix, state.resource_is_all_sky,
+        )
         solar = hourly_solar_kwh(
-            self.pv_capacity_kw, self.peak_sun_hours, self.system_efficiency_pct,
-            weather_factor_pct * self.latitude_factor, self.harvest_pct,
+            self.pv_capacity_kw * pv_capacity_factor, hours, self.system_efficiency_pct,
+            weather_factor_pct, self.harvest_pct,
         )
         return run_steady_state_simulation(
             hourly_consumption_kwh=self.hourly_consumption_kwh,
             hourly_solar_kwh_values=solar,
             hour_labels=HOUR_LABELS,
-            battery_total_kwh=self.battery_total_kwh,
+            battery_total_kwh=self.battery_total_kwh * battery_capacity_factor,
             battery_dod_pct=self.battery_dod_pct,
             battery_efficiency_pct=self.battery_efficiency_pct,
             max_battery_charge_kw=self.max_battery_charge_kw,
             max_battery_discharge_kw=self.max_battery_discharge_kw,
-            grid_export_enabled=self.export_checkbox.active,
+            grid_export_enabled=self.export_checkbox.active and design.supports_grid_export,
+            inverter_rated_power_kw=design.inverter_rated_kw,
+            inverter_efficiency_pct=design.inverter_efficiency_pct,
+            max_pv_input_kw=design.max_pv_conversion_kw,
+            max_pv_charging_kw=design.max_pv_charging_kw,
         )
 
     def _series_for_result(self, result) -> tuple[list[tuple], list[str], list]:
@@ -278,8 +295,36 @@ class SimulationScreen(MDScreen):
         self.table_container.height = grid.height
 
     def _recalculate(self) -> None:
+        app = MDApp.get_running_app()
+        app.state.weather_factors = {n: self._float(f, DEFAULT_WEATHER_FACTORS[n])
+                                      for n, f in self._weather_fields.items()}
+        app.state.active_scenario = self.active_scenario
+        app.state.harvest_pct = list(self.harvest_pct)
         factor = self._float(self._weather_fields[self.active_scenario], DEFAULT_WEATHER_FACTORS[self.active_scenario])
-        result = self._run_for_factor(factor)
+        try:
+            result = self._run_for_factor(factor)
+            scenarios = {
+                name: self._run_for_factor(app.state.weather_factors[name]) for name in SCENARIOS
+            }
+        except (ValueError, RuntimeError, OverflowError) as exc:
+            self.last_error = str(exc)
+            self.assumption_label.text = self.last_error
+            app.state.scenario_results = {}
+            for label in (self.harvest_label, self.consumption_label, self.grid_label, self.battery_label):
+                label.text = "Unavailable"
+            self.chart.set_data([], [])
+            self._last_hours = []
+            self._refresh_table()
+            return
+        self.last_error = ""
+        app.state.export_enabled = self.export_checkbox.active and app.state.design.supports_grid_export
+        app.state.scenario_results = scenarios
+        self.assumption_label.text = (
+            "Solar/charge: DC kWh; load/grid: AC kWh; battery: stored kWh. "
+            + ("Weather scenarios calibrated to the imported all-sky resource. " if app.state.resource_is_all_sky else "")
+            + ("Export is unavailable for the 1 kW planning assembly." if not app.state.design.supports_grid_export else
+               f"Conversion loss {result.total_conversion_loss_kwh:.2f} kWh; clipping {result.total_clipped_kwh:.2f} kWh.")
+        )
 
         net_grid = result.total_grid_export_kwh - result.total_grid_purchase_kwh
         grid_word = "Sell" if net_grid >= 0 else "Buy"
@@ -295,20 +340,9 @@ class SimulationScreen(MDScreen):
         dod_floor_kwh = self.battery_total_kwh * (1 - self.battery_dod_pct / 100)
         hline = {"y": dod_floor_kwh, "label": "DOD Floor", "color": DOD_FLOOR_COLOR}
         self.chart.set_data(series, x_labels, hline=hline)
-        self._last_hours = hours
+        self._last_hours = list(result.hours)
         self._refresh_table()
 
-        app = MDApp.get_running_app()
-        app.state.weather_factors = {n: self._float(f, DEFAULT_WEATHER_FACTORS[n])
-                                      for n, f in self._weather_fields.items()}
-        app.state.active_scenario = self.active_scenario
-        app.state.export_enabled = self.export_checkbox.active
-        app.state.harvest_pct = list(self.harvest_pct)
-        # All 3 scenarios (not just the active one) so Savings & ROI can blend them by weather mix.
-        app.state.scenario_results = {
-            name: self._run_for_factor(self._float(self._weather_fields[name], DEFAULT_WEATHER_FACTORS[name]))
-            for name in SCENARIOS
-        }
 
     def get_report_data(self) -> dict:
         app = MDApp.get_running_app()
@@ -317,6 +351,12 @@ class SimulationScreen(MDScreen):
             "scenario_results": dict(app.state.scenario_results),
             "export_enabled": app.state.export_enabled,
             "harvest_pct": list(self.harvest_pct),
+            "export_requested": self.export_checkbox.active,
+            "resource_source": app.state.resource_source,
+            "resource_is_all_sky": app.state.resource_is_all_sky,
+            "resource_metadata": dict(app.state.resource_metadata),
+            "energy_convention": "Solar/charge DC; load/discharge/export/import AC; battery stored kWh.",
+            "selection_error": self.last_error,
         }
 
     def collect_state(self) -> dict:
@@ -325,13 +365,19 @@ class SimulationScreen(MDScreen):
                                  for n, f in self._weather_fields.items()},
             "active_scenario": self.active_scenario,
             "export_enabled": self.export_checkbox.active,
+            "harvest_pct": list(self.harvest_pct),
+            "selection_error": self.last_error,
         }
 
     def apply_state(self, data: dict) -> None:
+        if data.get("harvest_pct") is not None:
+            self.harvest_pct = list(data["harvest_pct"])
         weather_factors = data.get("weather_factors") or {}
+        if not isinstance(weather_factors, dict):
+            weather_factors = {}
         for name, field in self._weather_fields.items():
-            field.text = f"{weather_factors.get(name, DEFAULT_WEATHER_FACTORS[name]):.1f}"
-        self.active_scenario = data.get("active_scenario", "Sunny")
+            field.text = f"{finite_float_or(weather_factors.get(name), DEFAULT_WEATHER_FACTORS[name]):.6f}"
+        self.active_scenario = data.get("active_scenario", "Sunny") if data.get("active_scenario", "Sunny") in SCENARIOS else "Sunny"
         self.scenario_field.set_value(self.active_scenario)
         self.export_checkbox.active = data.get("export_enabled", True)
         self._retheme()
@@ -347,5 +393,10 @@ class SimulationScreen(MDScreen):
         app.root.current = "about"
 
     def _go_next(self) -> None:
+        if self.last_error:
+            self._error_dialog = MDDialog(title="Simulation unavailable", text=self.last_error,
+                buttons=[MDFlatButton(text="OK", on_release=lambda *_: self._error_dialog.dismiss())])
+            self._error_dialog.open()
+            return
         app = MDApp.get_running_app()
         app.root.current = "roi"

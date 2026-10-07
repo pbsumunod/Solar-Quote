@@ -7,6 +7,8 @@ actual math (daily/day/night/peak, per-hour kWh) still comes from the ported
 logic/calculations.py, unchanged from the desktop version.
 """
 
+import math
+
 from kivy.graphics import Color, Line, Rectangle
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
@@ -26,9 +28,9 @@ from logic.calculations import (
     daily_consumption_kwh,
     default_hourly_percentages,
     hourly_kwh_from_percentages,
-    split_day_night_kwh,
 )
-from logic.quote_validation import validate_hourly_profile
+from logic.equipment import refresh_equipment_design
+from logic.quote_validation import live_float_or, validate_hourly_profile
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
     about_button, framed_label, go_home, header_actions, icon_button, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
@@ -276,15 +278,18 @@ class ConsumptionScreen(MDScreen):
     def _on_pct_changed(self, idx: int, value: str) -> None:
         if self._updating:
             return
-        try:
-            self.hourly_pct[idx] = max(0.0, float(value))
-        except ValueError:
-            self.hourly_pct[idx] = 0.0
+        self.hourly_pct[idx] = live_float_or(value, 0.0)
         self._refresh_kwh_column()
         self._refresh_summary()
 
     def _refresh_kwh_column(self) -> None:
         hourly_kwh = hourly_kwh_from_percentages(self.monthly_kwh, self.hourly_pct)
+        if any(not math.isfinite(value) for value in hourly_kwh):
+            for label in self._kwh_labels:
+                label.text = "N/A"
+            self.total_pct_label.text = "Enter finite hourly percentages (0-100%)."
+            self.chart.set_data([], [], [])
+            return
         for i, kwh in enumerate(hourly_kwh):
             self._kwh_labels[i].text = f"{kwh:.2f}"
         total = sum(self.hourly_pct)
@@ -295,17 +300,19 @@ class ConsumptionScreen(MDScreen):
 
     def _refresh_summary(self) -> None:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)
-        day_kwh, night_kwh = split_day_night_kwh(daily_kwh, self.daytime_pct)
         hourly_kwh = hourly_kwh_from_percentages(self.monthly_kwh, self.hourly_pct)
+        profile_is_finite = all(math.isfinite(value) for value in hourly_kwh)
+        day_kwh, night_kwh = sum(hourly_kwh[:12]), sum(hourly_kwh[12:])
         peak = max(hourly_kwh) if hourly_kwh else 0.0
-        self.total_label.text = f"{daily_kwh:.2f} kWh"
-        self.day_label.text = f"{day_kwh:.2f} kWh"
-        self.night_label.text = f"{night_kwh:.2f} kWh"
-        self.peak_label.text = f"{peak:.2f} kWh"
+        self.total_label.text = f"{daily_kwh:.2f} kWh" if math.isfinite(daily_kwh) else "N/A"
+        self.day_label.text = f"{day_kwh:.2f} kWh" if profile_is_finite else "N/A"
+        self.night_label.text = f"{night_kwh:.2f} kWh" if profile_is_finite else "N/A"
+        self.peak_label.text = f"{peak:.2f} kWh" if profile_is_finite else "N/A"
 
         app = MDApp.get_running_app()
         app.state.hourly_pct = list(self.hourly_pct)
-        app.state.peak_hourly_kwh = peak
+        app.state.peak_hourly_kwh = peak if profile_is_finite else 0.0
+        refresh_equipment_design(app.state)
 
     def collect_state(self) -> dict:
         """The raw, user-editable % table, for full-quote save/restore -- distinct
@@ -323,8 +330,8 @@ class ConsumptionScreen(MDScreen):
 
     def get_report_data(self) -> dict:
         daily_kwh = daily_consumption_kwh(self.monthly_kwh)
-        day_kwh, night_kwh = split_day_night_kwh(daily_kwh, self.daytime_pct)
         hourly_kwh = hourly_kwh_from_percentages(self.monthly_kwh, self.hourly_pct)
+        day_kwh, night_kwh = sum(hourly_kwh[:12]), sum(hourly_kwh[12:])
         return {
             "daily_kwh": daily_kwh,
             "day_kwh": day_kwh,

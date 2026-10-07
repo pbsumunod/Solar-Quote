@@ -28,6 +28,7 @@ pads the root layout by that amount.
 """
 
 import os
+import xml.etree.ElementTree as ET
 
 FILEPROVIDER_AUTHORITY = "org.solarclientfinder.solarclientfinder.fileprovider"
 
@@ -46,37 +47,29 @@ PROVIDER_XML = f"""
 
 def before_apk_assemble(toolchain):
     manifest_path = os.path.join("src", "main", "AndroidManifest.xml")
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    if FILEPROVIDER_AUTHORITY in content:
-        # The provider may already be present when Buildozer reuses its generated
-        # manifest, but the keyboard resize setting still needs to be guaranteed.
-        provider_is_present = True
-    else:
-        provider_is_present = False
-
-    if "</application>" not in content:
-        raise RuntimeError(
-            "p4a_hooks.py: could not find </application> in AndroidManifest.xml "
-            "to inject the FileProvider -- the manifest template may have changed."
-        )
-
-    if not provider_is_present:
-        content = content.replace("</application>", PROVIDER_XML + "    </application>")
-
-    # Resize Kivy's view when the Android keyboard opens so ScrollView has a
-    # smaller viewport to scroll within, instead of the keyboard covering fields.
-    if 'android:windowSoftInputMode="adjustResize"' not in content:
-        activity = 'android:name="org.kivy.android.PythonActivity"'
-        if activity not in content:
-            raise RuntimeError(
-                "p4a_hooks.py: could not find the Kivy PythonActivity to configure "
-                "Android keyboard resizing."
-            )
-        content = content.replace(
-            activity, activity + ' android:windowSoftInputMode="adjustResize"', 1,
-        )
-
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    namespace = "http://schemas.android.com/apk/res/android"
+    ET.register_namespace("android", namespace)
+    attribute = lambda name: "{" + namespace + "}" + name
+    tree = ET.parse(manifest_path)
+    application = tree.getroot().find("application")
+    if application is None:
+        raise RuntimeError("Android manifest has no application element")
+    application.set(attribute("allowBackup"), "false")
+    application.set(attribute("fullBackupContent"), "@xml/backup_rules")
+    application.set(attribute("dataExtractionRules"), "@xml/data_extraction_rules")
+    provider = next((item for item in application.findall("provider")
+                     if item.get(attribute("authorities")) == FILEPROVIDER_AUTHORITY), None)
+    if provider is None:
+        provider = ET.SubElement(application, "provider", {
+            attribute("name"): "androidx.core.content.FileProvider",
+            attribute("authorities"): FILEPROVIDER_AUTHORITY,
+            attribute("exported"): "false", attribute("grantUriPermissions"): "true"})
+        ET.SubElement(provider, "meta-data", {
+            attribute("name"): "android.support.FILE_PROVIDER_PATHS",
+            attribute("resource"): "@xml/file_paths"})
+    activity = next((item for item in application.findall("activity")
+                     if item.get(attribute("name")) == "org.kivy.android.PythonActivity"), None)
+    if activity is None:
+        raise RuntimeError("Android manifest has no Kivy PythonActivity")
+    activity.set(attribute("windowSoftInputMode"), "adjustResize")
+    tree.write(manifest_path, encoding="utf-8", xml_declaration=True)

@@ -1,0 +1,9 @@
+{
+  "tasks": {
+    "test": "deno test tests/",
+    "check": "deno check functions/solarquote-play-verify/index.ts functions/solarquote-play-rtdn/index.ts tests/",
+    "lint": "deno lint functions/ tests/"
+  },
+  "compilerOptions": { "strict": true },
+  "fmt": { "lineWidth": 100 }
+}

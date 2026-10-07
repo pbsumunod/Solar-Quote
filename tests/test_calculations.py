@@ -56,8 +56,8 @@ class TestIsDaytimeIndex:
 
 
 class TestDailyConsumption:
-    def test_divides_by_30(self):
-        assert daily_consumption_kwh(300) == pytest.approx(10.0)
+    def test_daily_consumption_annualizes_to_twelve_months(self):
+        assert daily_consumption_kwh(300) * 365 == pytest.approx(300 * 12)
 
 
 class TestSplitDayNight:
@@ -130,8 +130,8 @@ class TestRoundUpToStandardSize:
     def test_exact_match_returned(self):
         assert round_up_to_standard_size(10, [5, 10, 16, 32]) == 10
 
-    def test_exceeds_max_returns_largest(self):
-        assert round_up_to_standard_size(50, [5, 10, 16, 32]) == 32
+    def test_exceeds_max_does_not_substitute_undersized_equipment(self):
+        assert round_up_to_standard_size(50, [5, 10, 16, 32]) is None
 
     def test_no_sizes_returns_none(self):
         assert round_up_to_standard_size(7, []) is None

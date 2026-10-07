@@ -14,3 +14,19 @@ venv/
 # Editor/OS
 .vscode/
 .DS_Store
+
+# Private subscription verification credentials and local caches
+*.pem
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
+service-account*.json
+*service*account*.json
+*credentials*.json
+billing_state.json
+backend/.env
+backend/credentials/
+.pytest_cache/
+.ruff_cache/

@@ -9,20 +9,35 @@ class AppState:
         self.project = Project(daytime_ratio_pct=70, electricity_rate=DEFAULT_ELECTRICITY_RATE)
         self.hourly_pct: list[float] = []
         self.peak_hourly_kwh: float = 0.0
+        self.peak_load_kw: float | None = None
+        self.surge_load_kw: float | None = None
+        self.storage_enabled: bool = True
+        self.site_latitude: float | None = None
+        self.site_longitude: float | None = None
+        self.site_tilt_deg: float = 10.0
+        self.site_azimuth_deg: float = 180.0
+        self.site_shading_pct: float = 0.0
+        self.resource_source: str = "Manual peak sun hours (planning estimate)"
+        self.resource_is_all_sky: bool = False
+        self.monthly_peak_sun_hours: list[float] = []
+        self.resource_coordinates = None
+        self.resource_metadata: dict = {}
+        self.resource_warning: str = ""
+        self.weather_mix = {"Sunny": 60.0, "Cloudy": 25.0, "Rainy": 15.0}
+        self.design = None
 
         # Set by whichever screen opens the About screen (its own name), so About's
         # back button returns to that screen instead of always jumping to Client.
         self.about_return_to: str = "client"
 
         # Populated by SolarScreen; read by later screens (Battery, Inverter, Report, etc).
-        # solar_total_kw is auto-picked from the same tier catalog as the inverter (see
-        # logic.calculations.INVERTER_KW_TIERS) -- no separate panel wattage/count.
+        # DC array capacity is selected independently from the AC inverter rating.
         self.peak_sun_hours: float = 4.5
         self.efficiency_pct: float = 80.0
         self.solar_total_kw: float = 0.0
 
         # Populated by BatteryScreen; read by later screens (Inverter, Report, etc).
-        # battery_total_kwh is auto-picked from logic.calculations.BATTERY_CAPACITY_TIERS_KWH.
+        # Bank voltage/module topology and compatible current limits come from the equipment catalog.
         self.battery_dod_pct: float = 80.0
         self.battery_efficiency_pct: float = 90.0
         self.battery_voltage: float = 48.0

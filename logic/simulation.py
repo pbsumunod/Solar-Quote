@@ -1,16 +1,15 @@
-"""Weather scenario and hourly energy-flow simulation (Instruction.md Sections 14-19).
+﻿"""Hourly DC solar / battery / AC load model with explicit conversion losses.
 
-Battery efficiency convention: the round-trip loss is applied entirely on discharge,
-matching Section 10's sizing formula (Nighttime Energy / DOD / Efficiency) -- to deliver
-X kWh to the load, X / efficiency kWh must be drawn from the battery's state of charge.
-Charging is treated as lossless into the state-of-charge figure. This is a deliberate
-simplification (the spec does not define a hourly-level convention), kept consistent
-with the one formula the spec does give.
+PV system efficiency excludes inverter conversion. Solar production and battery
+charging are DC kWh; loads, battery discharge delivered to load, imports and exports
+are AC kWh. Battery round-trip loss is applied on discharge, also used in sizing.
+Each interval is one hour, so power limits multiply by 1 h.
 """
 
 from dataclasses import dataclass, field
+import math
 
-DEFAULT_SOLAR_HARVEST_PCT = [5, 12, 25, 45, 70, 95, 95, 70, 45, 25, 12, 5]  # 6 AM - 5 PM
+DEFAULT_SOLAR_HARVEST_PCT = [5, 12, 25, 45, 70, 95, 95, 70, 45, 25, 12, 5]
 DEFAULT_WEATHER_FACTORS = {"Sunny": 100.0, "Cloudy": 60.0, "Rainy": 30.0}
 
 
@@ -18,42 +17,39 @@ def default_solar_harvest_pct() -> list[float]:
     return list(DEFAULT_SOLAR_HARVEST_PCT)
 
 
+def _nonnegative(name, value):
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+        raise ValueError(f"{name} must be a finite non-negative number.")
+
+
 def base_daily_production_kwh(pv_capacity_kw: float, peak_sun_hours: float, system_efficiency_pct: float) -> float:
-    """Inverse of Section 8's sizing formula: PV Capacity x Peak Sun Hours x System Efficiency."""
-    return pv_capacity_kw * peak_sun_hours * (system_efficiency_pct / 100)
+    for name, value in (("PV capacity", pv_capacity_kw), ("Peak sun hours", peak_sun_hours),
+                        ("System efficiency", system_efficiency_pct)):
+        _nonnegative(name, value)
+    if peak_sun_hours > 24 or system_efficiency_pct > 100:
+        raise ValueError("Solar assumptions are outside their valid ranges.")
+    value = pv_capacity_kw * peak_sun_hours * system_efficiency_pct / 100
+    if not math.isfinite(value):
+        raise ValueError("Solar production exceeds the supported numerical range.")
+    return value
 
 
-def hourly_solar_kwh(
-    pv_capacity_kw: float,
-    peak_sun_hours: float,
-    system_efficiency_pct: float,
-    weather_factor_pct: float,
-    harvest_pct: list[float],
-) -> list[float]:
-    """Section 15: normalize the harvest-profile SHAPE against the true total daily
-    production (not a naive capacity x percentage multiplication), then apply the weather
-    scenario factor. Returns 24 hourly values aligned with calculations.HOUR_LABELS
-    (the last 12 -- nighttime -- are always 0).
-
-    The shape is deliberately concentrated around solar noon (matching how real solar
-    irradiance is peaked, not flat) so that the peak hour's SHARE of the daily total is
-    close to the shape's own peak percentage -- e.g. with the default shape, the peak hour
-    receives ~19% of the day's energy, so a system with peak_sun_hours close to the app's
-    4.5h default sees peak-hour output land near capacity x system_efficiency x 95%, not
-    diluted well below what "95%" suggests. peak_sun_hours + system_efficiency still fully
-    control the total daily/annual kWh (and thus ROI) -- the shape only ever redistributes
-    that same fixed total across hours, so tuning it here never changes Solar Sizing's
-    numbers or the financial results.
-    """
-    base = base_daily_production_kwh(pv_capacity_kw, peak_sun_hours, system_efficiency_pct)
-    total_daily_kwh = base * (weather_factor_pct / 100)
-
-    shape_total = sum(harvest_pct)
-    if shape_total <= 0:
-        day_hours = [0.0] * 12
-    else:
-        day_hours = [total_daily_kwh * (p / shape_total) for p in harvest_pct]
-    return day_hours + [0.0] * 12
+def hourly_solar_kwh(pv_capacity_kw: float, peak_sun_hours: float, system_efficiency_pct: float,
+                     weather_factor_pct: float, harvest_pct: list[float]) -> list[float]:
+    """Redistribute derated DC production over the 12 daytime hours."""
+    _nonnegative("Weather factor", weather_factor_pct)
+    if weather_factor_pct > 100:
+        raise ValueError("Weather factor must be between 0 and 100%.")
+    if len(harvest_pct) != 12:
+        raise ValueError("Solar harvest profile must contain 12 daytime values.")
+    for value in harvest_pct:
+        _nonnegative("Harvest profile", value)
+    daily = base_daily_production_kwh(pv_capacity_kw, peak_sun_hours, system_efficiency_pct) * weather_factor_pct / 100
+    total = sum(harvest_pct)
+    if not math.isfinite(total):
+        raise ValueError("Solar harvest profile exceeds the supported numerical range.")
+    day = [daily * value / total for value in harvest_pct] if total > 0 else [0.0] * 12
+    return day + [0.0] * 12
 
 
 @dataclass
@@ -70,6 +66,9 @@ class HourResult:
     soc_start_kwh: float
     soc_end_kwh: float
     soc_end_pct: float
+    conversion_loss_kwh: float = 0.0
+    battery_loss_kwh: float = 0.0
+    clipped_kwh: float = 0.0
 
 
 @dataclass
@@ -83,129 +82,137 @@ class SimulationResult:
     total_grid_purchase_kwh: float = 0.0
     total_grid_export_kwh: float = 0.0
     total_curtailed_kwh: float = 0.0
+    total_conversion_loss_kwh: float = 0.0
+    total_battery_loss_kwh: float = 0.0
+    total_clipped_kwh: float = 0.0
+    converged: bool = True
+    iterations: int = 1
+    soc_residual_kwh: float = 0.0
 
 
 def run_hourly_simulation(
-    hourly_consumption_kwh: list[float],
-    hourly_solar_kwh_values: list[float],
-    hour_labels: list[str],
-    battery_total_kwh: float,
-    battery_dod_pct: float,
-    battery_efficiency_pct: float,
-    max_battery_charge_kw: float,
-    max_battery_discharge_kw: float,
-    grid_export_enabled: bool,
-    initial_soc_kwh: float,
+    hourly_consumption_kwh: list[float], hourly_solar_kwh_values: list[float],
+    hour_labels: list[str], battery_total_kwh: float, battery_dod_pct: float,
+    battery_efficiency_pct: float, max_battery_charge_kw: float,
+    max_battery_discharge_kw: float, grid_export_enabled: bool, initial_soc_kwh: float,
+    *, inverter_rated_power_kw: float | None = None, inverter_efficiency_pct: float = 100,
+    max_pv_input_kw: float | None = None, max_pv_charging_kw: float | None = None,
 ) -> SimulationResult:
-    """Section 16-17: hourly energy-flow simulation with battery SOC tracking.
+    """Prioritize load, then DC battery charge, then constrained AC export.
 
-    Priority when solar is available: load first, then battery charge, then export/curtail.
-    Priority when solar is insufficient (including all nighttime hours): battery discharge
-    covers the shortfall, then grid covers whatever the battery cannot. `initial_soc_kwh` is
-    the battery's state of charge at the start of the simulated cycle (6 AM); pass the
-    result of run_steady_state_simulation() to find the value that makes the 24-hour cycle
-    self-consistent rather than guessing one.
+    Optional hardware limits preserve callers of the original pure-logic API.
+    max_battery_discharge_kw is power delivered on the AC side. Imports may supply
+    load beyond the inverter rating; solar plus battery AC output cannot exceed it.
     """
+    if not (len(hour_labels) == len(hourly_consumption_kwh) == len(hourly_solar_kwh_values)) or not hour_labels:
+        raise ValueError("Load, solar and hour labels must have the same nonzero length.")
+    for name, values in (("Load", hourly_consumption_kwh), ("Solar", hourly_solar_kwh_values)):
+        for value in values:
+            _nonnegative(name, value)
+        if not math.isfinite(sum(values)):
+            raise ValueError(f"{name} total exceeds the supported numerical range.")
+    for name, value in (("Battery capacity", battery_total_kwh), ("Battery charge limit", max_battery_charge_kw),
+                        ("Battery discharge limit", max_battery_discharge_kw), ("Initial SOC", initial_soc_kwh)):
+        _nonnegative(name, value)
+    if not (math.isfinite(battery_dod_pct) and 0 <= battery_dod_pct <= 100 and
+            math.isfinite(battery_efficiency_pct) and 0 < battery_efficiency_pct <= 100 and
+            math.isfinite(inverter_efficiency_pct) and 0 < inverter_efficiency_pct <= 100):
+        raise ValueError("Battery and inverter efficiencies / DOD are outside their valid ranges.")
+    for name, value in (("Inverter rating", inverter_rated_power_kw), ("PV input limit", max_pv_input_kw),
+                        ("PV charge limit", max_pv_charging_kw)):
+        if value is not None:
+            _nonnegative(name, value)
+    inv_eff, batt_eff = inverter_efficiency_pct / 100, battery_efficiency_pct / 100
+    inverter_limit = inverter_rated_power_kw if inverter_rated_power_kw is not None else math.inf
+    pv_limit = max_pv_input_kw if max_pv_input_kw is not None else math.inf
+    pv_charge_limit = max_pv_charging_kw if max_pv_charging_kw is not None else math.inf
     min_soc = battery_total_kwh * (1 - battery_dod_pct / 100)
-    max_soc = battery_total_kwh
-    efficiency = battery_efficiency_pct / 100
-    soc = max(min_soc, min(max_soc, initial_soc_kwh))
-
+    soc = max(min_soc, min(battery_total_kwh, initial_soc_kwh))
     result = SimulationResult()
 
     for label, consumption, solar in zip(hour_labels, hourly_consumption_kwh, hourly_solar_kwh_values):
-        soc_start = soc
-        solar_to_load = min(consumption, solar)
-        remaining_load = consumption - solar_to_load
-        remaining_solar = solar - solar_to_load
-
-        battery_charge = 0.0
-        battery_discharge = 0.0
-        grid_export = 0.0
-        curtailed = 0.0
-        grid_purchase = 0.0
-
-        if remaining_solar > 0:
-            headroom = max(0.0, max_soc - soc)
-            battery_charge = min(remaining_solar, max_battery_charge_kw, headroom)
-            soc += battery_charge
-            remaining_solar -= battery_charge
-            if remaining_solar > 0:
-                if grid_export_enabled:
-                    grid_export = remaining_solar
-                else:
-                    curtailed = remaining_solar
-        elif remaining_load > 0:
-            available = max(0.0, (soc - min_soc) * efficiency) if efficiency > 0 else 0.0
-            battery_discharge = min(remaining_load, max_battery_discharge_kw, available)
-            soc -= (battery_discharge / efficiency) if efficiency > 0 else 0.0
-            remaining_load -= battery_discharge
-            if remaining_load > 0:
-                grid_purchase = remaining_load
-
-        soc = max(min_soc, min(max_soc, soc))
-        soc_pct = (soc / max_soc * 100) if max_soc > 0 else 0.0
-
-        result.hours.append(HourResult(
-            hour_label=label, consumption_kwh=consumption, solar_kwh=solar,
-            solar_to_load_kwh=solar_to_load, battery_charge_kwh=battery_charge,
-            battery_discharge_kwh=battery_discharge, grid_purchase_kwh=grid_purchase,
-            grid_export_kwh=grid_export, curtailed_kwh=curtailed,
-            soc_start_kwh=soc_start, soc_end_kwh=soc, soc_end_pct=soc_pct,
-        ))
-
-        result.total_consumption_kwh += consumption
-        result.total_solar_kwh += solar
-        result.total_solar_to_load_kwh += solar_to_load
-        result.total_battery_charge_kwh += battery_charge
-        result.total_battery_discharge_kwh += battery_discharge
-        result.total_grid_purchase_kwh += grid_purchase
-        result.total_grid_export_kwh += grid_export
-        result.total_curtailed_kwh += curtailed
-
+        start = soc
+        dc_available = min(solar, pv_limit)
+        clipped = solar - dc_available
+        curtailed = clipped
+        solar_to_load = min(consumption, dc_available * inv_eff, inverter_limit)
+        dc_to_load = solar_to_load / inv_eff
+        remaining_dc = max(0.0, dc_available - dc_to_load)
+        remaining_load = max(0.0, consumption - solar_to_load)
+        ac_headroom = max(0.0, inverter_limit - solar_to_load)
+        charge = min(remaining_dc, max_battery_charge_kw, pv_charge_limit, max(0.0, battery_total_kwh - soc))
+        soc += charge
+        remaining_dc -= charge
+        export = min(remaining_dc * inv_eff, ac_headroom) if grid_export_enabled else 0.0
+        dc_export = export / inv_eff
+        unused_dc = max(0.0, remaining_dc - dc_export)
+        curtailed += unused_dc
+        if grid_export_enabled:
+            clipped += unused_dc
+        conversion_loss = dc_to_load + dc_export - solar_to_load - export
+        available_ac = max(0.0, soc - min_soc) * batt_eff * inv_eff
+        discharge = min(remaining_load, max_battery_discharge_kw, available_ac, max(0.0, ac_headroom - export))
+        dc_discharge = discharge / inv_eff
+        soc_draw = dc_discharge / batt_eff
+        soc -= soc_draw
+        battery_loss = soc_draw - dc_discharge
+        conversion_loss += dc_discharge - discharge
+        grid = max(0.0, remaining_load - discharge)
+        soc = max(min_soc, min(battery_total_kwh, soc))
+        hour = HourResult(
+            label, consumption, solar, solar_to_load, charge, discharge, grid, export,
+            curtailed, start, soc, soc / battery_total_kwh * 100 if battery_total_kwh else 0,
+            conversion_loss, battery_loss, clipped,
+        )
+        result.hours.append(hour)
+        for name, value in (("consumption", consumption), ("solar", solar), ("solar_to_load", solar_to_load),
+                            ("battery_charge", charge), ("battery_discharge", discharge), ("grid_purchase", grid),
+                            ("grid_export", export), ("curtailed", curtailed), ("conversion_loss", conversion_loss),
+                            ("battery_loss", battery_loss), ("clipped", clipped)):
+            attr = f"total_{name}_kwh"
+            setattr(result, attr, getattr(result, attr) + value)
+    result.soc_residual_kwh = result.hours[-1].soc_end_kwh - result.hours[0].soc_start_kwh
     return result
 
 
 def run_steady_state_simulation(
-    hourly_consumption_kwh: list[float],
-    hourly_solar_kwh_values: list[float],
-    hour_labels: list[str],
-    battery_total_kwh: float,
-    battery_dod_pct: float,
-    battery_efficiency_pct: float,
-    max_battery_charge_kw: float,
-    max_battery_discharge_kw: float,
-    grid_export_enabled: bool,
-    max_iterations: int = 50,
-    tolerance_kwh: float = 0.001,
+    hourly_consumption_kwh: list[float], hourly_solar_kwh_values: list[float],
+    hour_labels: list[str], battery_total_kwh: float, battery_dod_pct: float,
+    battery_efficiency_pct: float, max_battery_charge_kw: float,
+    max_battery_discharge_kw: float, grid_export_enabled: bool,
+    max_iterations: int = 80, tolerance_kwh: float = 1e-7, **hardware_limits,
 ) -> SimulationResult:
-    """Solve for the battery's starting state of charge that makes the 24-hour cycle
-    self-consistent -- i.e. the SOC at the end of the simulated day equals the SOC it
-    started with -- by repeatedly re-running the simulation, feeding each run's ending
-    SOC back in as the next run's starting SOC, until it converges. This models a
-    battery cycling the same way day after day rather than an arbitrary starting guess.
+    """Find a fixed SOC cycle by bracketing; never return a draining transient.
+
+    For this dispatch policy F(SOC)-SOC is continuous and non-increasing. Endpoint
+    evaluation handles empty/full fixed cycles; bisection handles arbitrarily slow
+    drift which repeated-day iteration could mistake for sustainable stored energy.
     """
-    min_soc = battery_total_kwh * (1 - battery_dod_pct / 100)
-    max_soc = battery_total_kwh
-    guess = max(min_soc, min(max_soc, battery_total_kwh * 0.5))
+    if max_iterations < 1 or not math.isfinite(tolerance_kwh) or tolerance_kwh <= 0:
+        raise ValueError("Steady-state solver needs positive iteration and tolerance limits.")
+    low = battery_total_kwh * (1 - battery_dod_pct / 100)
+    high = battery_total_kwh
 
-    result = None
-    for _ in range(max_iterations):
-        result = run_hourly_simulation(
-            hourly_consumption_kwh=hourly_consumption_kwh,
-            hourly_solar_kwh_values=hourly_solar_kwh_values,
-            hour_labels=hour_labels,
-            battery_total_kwh=battery_total_kwh,
-            battery_dod_pct=battery_dod_pct,
-            battery_efficiency_pct=battery_efficiency_pct,
-            max_battery_charge_kw=max_battery_charge_kw,
-            max_battery_discharge_kw=max_battery_discharge_kw,
-            grid_export_enabled=grid_export_enabled,
-            initial_soc_kwh=guess,
+    def run(soc):
+        return run_hourly_simulation(
+            hourly_consumption_kwh, hourly_solar_kwh_values, hour_labels, battery_total_kwh,
+            battery_dod_pct, battery_efficiency_pct, max_battery_charge_kw,
+            max_battery_discharge_kw, grid_export_enabled, soc, **hardware_limits,
         )
-        end_soc = result.hours[-1].soc_end_kwh
-        if abs(end_soc - guess) < tolerance_kwh:
-            break
-        guess = end_soc
 
-    return result
+    for iteration, guess in ((1, low), (2, high)):
+        result = run(guess)
+        if abs(result.soc_residual_kwh) <= tolerance_kwh:
+            result.iterations = iteration
+            return result
+    for iteration in range(1, max_iterations + 1):
+        guess = (low + high) / 2
+        result = run(guess)
+        result.iterations = iteration + 2
+        if abs(result.soc_residual_kwh) <= tolerance_kwh:
+            return result
+        if result.soc_residual_kwh > 0:
+            low = guess
+        else:
+            high = guess
+    raise RuntimeError("Battery SOC did not converge; annual savings cannot use this transient cycle.")

@@ -22,8 +22,14 @@ name: Build Signed Release AAB
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
+  checks:
+    uses: ./.github/workflows/test.yml
   build:
+    needs: checks
     # Same toolchain as build-apk.yml -- see that file's comments for why
     # 22.04 specifically, and why FONTTOOLS_WITH_CYTHON is needed.
     runs-on: ubuntu-22.04
@@ -51,21 +57,21 @@ jobs:
             libffi-dev libssl-dev automake build-essential
 
       - name: Install Buildozer
-        run: pip install --upgrade buildozer cython
+        run: pip install buildozer==1.5.0 Cython==3.0.12
 
       - name: Cache Buildozer global directory (SDK/NDK)
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-v2-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-global-v2-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}
 
       - name: Cache Buildozer project directory (compiled recipes)
         uses: actions/cache@v4
         with:
           path: .buildozer
-          key: buildozer-release-v1-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
+          key: buildozer-release-v1-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}-${{ github.sha }}
           restore-keys: |
-            buildozer-release-v1-${{ hashFiles('buildozer.spec') }}-
+            buildozer-release-v1-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}-
 
       - name: Decode signing keystore
         env:
@@ -98,28 +104,47 @@ jobs:
           CFLAGS: "-D_DEFAULT_SOURCE"
         run: yes | buildozer android release
 
-      - name: Verify the AAB is actually signed
+      - name: Verify expected signer and reject unsigned entries
+        env:
+          VERIFY_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          VERIFY_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
           AAB_FILE=$(find bin -name "*.aab" | head -n1)
           if [ -z "$AAB_FILE" ]; then
             echo "::error::No .aab found in bin/ -- build did not produce a bundle."
             exit 1
           fi
-          jarsigner -verify "$AAB_FILE" || {
+          jarsigner -verify -strict -keystore "$RUNNER_TEMP/release.keystore" -storepass:env VERIFY_KEYSTORE_PASSWORD "$AAB_FILE" "$VERIFY_KEY_ALIAS" || {
             echo "::error::$AAB_FILE is not signed -- check the P4A_RELEASE_* secrets."
             exit 1
           }
           echo "Signed bundle: $AAB_FILE"
 
-      - name: Create native debug-symbol archive
+      - name: Check native architecture and 16 KB ELF alignment
         run: |
           AAB_FILE=$(find bin -name "*.aab" | head -n1)
-          EXTRACT_DIR="$RUNNER_TEMP/aab-native-libs"
-          SYMBOLS_DIR="$RUNNER_TEMP/native-debug-symbols"
-          mkdir -p "$EXTRACT_DIR" "$SYMBOLS_DIR/arm64-v8a"
-          unzip -q "$AAB_FILE" 'base/lib/*' -d "$EXTRACT_DIR"
-          find "$EXTRACT_DIR/base/lib/arm64-v8a" -maxdepth 1 -name '*.so' -exec cp {} "$SYMBOLS_DIR/arm64-v8a/" \;
-          test -n "$(find "$SYMBOLS_DIR/arm64-v8a" -name '*.so' -print -quit)"
+          python scripts/check_android_artifact.py "$AAB_FILE"
+
+      - name: Verify generated APK ZIP alignment
+        run: |
+          BUNDLETOOL="$RUNNER_TEMP/bundletool.jar"
+          curl -fsSL --retry 3 https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar -o "$BUNDLETOOL"
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $BUNDLETOOL" | sha256sum -c -
+          AAB_FILE=$(find bin -name "*.aab" | head -n1)
+          # Disposable local key signs only the APK used for alignment checks.
+          keytool -genkeypair -keystore "$RUNNER_TEMP/check.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Alignment Check" -keyalg RSA -keysize 2048 -validity 1
+          java -jar "$BUNDLETOOL" build-apks --bundle="$AAB_FILE" --output="$RUNNER_TEMP/check.apks" --mode=universal --ks="$RUNNER_TEMP/check.keystore" --ks-key-alias=androiddebugkey --ks-pass=pass:android --key-pass=pass:android
+          unzip -p "$RUNNER_TEMP/check.apks" universal.apk > "$RUNNER_TEMP/check.apk"
+          ZIPALIGN=$(find "$HOME/.buildozer" -path '*/build-tools/36.0.0/zipalign' -print -quit)
+          test -n "$ZIPALIGN"
+          "$ZIPALIGN" -c -P 16 -v 4 "$RUNNER_TEMP/check.apk"
+
+      - name: Collect matching unstripped native symbols
+        run: |
+          AAB_FILE=$(find bin -name "*.aab" | head -n1)
+          READELF=$(find "$HOME/.buildozer" -path '*llvm/prebuilt/linux-x86_64/bin/llvm-readelf' -print -quit)
+          test -n "$READELF"
+          python scripts/create_native_symbols.py "$AAB_FILE" .buildozer "$RUNNER_TEMP/native-debug-symbols" --readelf "$READELF"
 
       - name: Upload native debug symbols
         uses: actions/upload-artifact@v4
@@ -127,7 +152,7 @@ jobs:
           name: solarquote-native-debug-symbols
           # GitHub packages this directory as a ZIP whose top-level entry is
           # arm64-v8a/, which is the layout Play Console expects directly.
-          path: ${{ runner.temp }}/native-debug-symbols/arm64-v8a
+          path: ${{ runner.temp }}/native-debug-symbols
           if-no-files-found: error
           retention-days: 14
 

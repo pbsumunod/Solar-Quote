@@ -19,7 +19,7 @@ from kivymd.uix.screen import MDScreen
 from screens.about_screen import CONTACT_EMAIL
 from ui_style import ON_SURFACE, screen_header
 
-LEGAL_LAST_UPDATED = "August 29, 2026"
+LEGAL_LAST_UPDATED = "October 6, 2026"
 
 TERMS_OF_SERVICE = f"""Last updated: {LEGAL_LAST_UPDATED}
 
@@ -27,7 +27,7 @@ TERMS_OF_SERVICE = f"""Last updated: {LEGAL_LAST_UPDATED}
 By installing or using SolarQuote ("the App"), you agree to these Terms of Service. If you do not agree, do not use the App.
 
 2. What the App Does
-SolarQuote is a tool for solar installers to size systems, run financial projections, and generate client-facing proposals (PDF, Excel, CSV, and PowerPoint). All calculations happen on your device, and the App never sends your client or project data to any SumClarTech server. It does make two limited network requests unrelated to your data -- see the Privacy Policy for details.
+SolarQuote is a tool for solar installers to size systems, run financial projections, and generate client-facing proposals (PDF, Excel, CSV, and PowerPoint). All calculations happen on your device, and the App never sends your client or project data to any SumClarTech server. Date checks and Google Play purchases use a network connection. A deployment may also use an explicitly configured subscription verification service; see the Privacy Policy.
 
 3. Estimates Only, No Warranty
 Every figure the App produces -- sizing, savings, ROI, and payback -- is an engineering estimate based on the information and assumptions you provide. Actual solar production, electricity consumption, weather conditions, equipment specifications, installation conditions, and utility requirements may differ. Final system designs must be verified and signed off by a qualified solar or electrical professional before being presented as final to a client. SumClarTech makes no warranty, express or implied, as to the accuracy, completeness, or fitness of any output for a particular purpose.
@@ -56,40 +56,36 @@ Questions about these Terms can be sent to {CONTACT_EMAIL}."""
 PRIVACY_POLICY = f"""Last updated: {LEGAL_LAST_UPDATED}
 
 1. Overview
-SolarQuote's core features -- sizing, simulation, and report generation -- work fully offline. This policy explains what information the App stores, the few things it does send over a network, and just as importantly, what it does not do with your data.
+SolarQuote sizes systems, simulates energy flows, and creates proposals on your device. Core quote calculations work offline. This policy describes local storage, user-directed copies, and subscription-related connections.
 
 2. Information Stored on Your Device
-When you create a client project, the App stores what you enter -- client name, contact number, email, project location, notes, energy usage, tariff, and the resulting system-design and simulation figures -- in a local database inside the App's private storage on your device. This information never leaves your device unless you choose to share it (see below).
+Saved projects and recoverable drafts include client name, contact number, email, location/site inputs, energy usage, tariff, equipment selections, and quote assumptions. SolarQuote stores them in its local database. Your device's users and anyone with access to its storage or backups may be able to read this information; secure your device appropriately.
 
-3. Exported Reports
-PDF, Excel, CSV, and PowerPoint proposals you export are saved to the App's own folder on your device. They are only shared, emailed, or sent anywhere if you actively choose to using the App's Share or Email to Client buttons, which hand the file to your own device's apps (your email client, messaging apps, etc.) -- SumClarTech does not receive a copy.
+3. Exported Reports and Backups
+Reports are stored in the app's report folder. You can view them, save a copy to a location you choose, or share/email them using another app. Project backup files contain client and project information. Choosing a cloud location or sharing service may send that copy to its provider. No report, backup, or email is sent automatically by SolarQuote.
 
-4. No Data Collection by Us
-SumClarTech does not collect, receive, or have access to any client information, project data, or exported files you create in the App. There are no user accounts, no analytics, and no advertising or tracking SDKs of any kind.
+4. Developer Access and Analytics
+SolarQuote contains no advertising or analytics SDK. Quote information is not sent to a developer server by its calculation or export features. Subscription verification, if configured, sends subscription information as described below; it does not include your client projects.
 
-5. Network Requests the App Does Make
-Two features require a network connection, and neither involves your client or project data:
-- Date verification: to keep free-trial timing accurate even if a device's clock is changed, the App checks the current date against a public time service (worldtimeapi.org). This request carries no personal or client information -- only a request for the current time.
-- Subscription purchases: upgrading to Pro is processed through Google Play Billing, operated by Google, not SumClarTech. Payment details and subscription status are handled entirely by Google Play; SumClarTech never receives your payment information, only whether a subscription is active.
-Every other feature -- system sizing, simulation, and report generation -- works fully offline and makes no network request.
+5. Network Connections
+Date verification requests the current date from worldtimeapi.org. Like any network request, the time-service operator can see connection metadata such as your IP address. The request does not contain your client/project data.
+Google Play handles purchases, payment details, offers, and subscription status under Google's policies.
+An optional solar-resource lookup contacts NASA POWER only when you request it. It sends site latitude/longitude to retrieve solar-resource data; it does not send client names, email, phone numbers, or address text. Coordinates can reveal a site location. Roof tilt, orientation, and shading adjustments are calculated locally. Cached resource data can be used offline.
+If a subscription verification service is configured for a deployment, SolarQuote sends the Google Play purchase token and product/package identifiers to that service over HTTPS. Its operator uses these to verify subscription access with Google. It does not receive client/project information. Consult the deployment operator about retention of subscription verification data.
+User-chosen share, email, cloud-save, and backup destinations have their own privacy practices.
 
-6. Data Control and Deletion
-You can delete any saved project from within the App at any time. Uninstalling the App permanently deletes its local database and all exported files stored in its folder from your device.
+6. Deletion and Copies
+Deleting a saved project removes its database record; it does not remove previously exported reports or copies shared/saved elsewhere. Report History lets you delete individual copies in the app's report folder. Uninstalling normally removes app-managed local storage. External copies, exported backups, device/vendor backups, and recipients' copies may remain. SolarQuote cannot delete those copies for you.
+This Android build disables automatic application backup in its manifest. Device transfer and vendor behavior vary; do not treat uninstall or deletion as a guarantee that every copy has been erased.
 
-7. Third-Party Services
-Beyond the two network requests described above, the App does not integrate with any third-party analytics, advertising, or cloud services.
+7. Your Client Information
+You decide what client information to collect, who may access it, how long to keep it, and when to share it. Obtain any necessary permissions and provide appropriate disclosures for your business. This policy does not establish your legal role or certify compliance with privacy law.
 
-8. Children's Privacy
-The App is a professional tool for solar installers and is not directed at children. SumClarTech does not knowingly collect information from children.
+8. Children
+SolarQuote is designed as a professional tool for solar installers. Its core features do not collect information through developer accounts.
 
-9. Your Role as the Data Controller
-The client information you enter (name, contact number, email, and project location) is your own client's personal data, collected by you in the course of your business. Because the App stores this data only on your device and never transmits it to SumClarTech, you -- not SumClarTech -- act as the data controller for that information under the Philippines' Data Privacy Act of 2012 (Republic Act No. 10173), and are responsible for handling it in accordance with that law, including obtaining any consent from your clients that it requires.
-
-10. Changes to This Policy
-This policy may be updated from time to time to reflect changes in the App. The "Last updated" date above will reflect the most recent revision.
-
-11. Contact
-Questions about this Privacy Policy can be sent to {CONTACT_EMAIL}."""
+9. Changes and Contact
+Updates to this policy are shown by the date above. Questions may be sent to {CONTACT_EMAIL}."""
 
 
 class _LegalScreen(MDScreen):

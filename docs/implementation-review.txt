@@ -1,0 +1,94 @@
+SolarQuote 1.1.0 — implementation review
+Date: 2026-10-07
+
+Implemented locally
+
+Automatic equipment selection:
+- Inverter tiers: 1, 3, 5, 6, 8, 10, 12, 16, 18, 20, 25, 30, 40, 50 kW;
+  supported parallel 50 kW configurations provide up to 500 kW nominal AC capacity,
+  subject to the demand/headroom, PV and battery limits.
+- Compatible 24 V, 48 V and high-voltage battery classes, actual nominal bank
+  voltage, module topology, voltage envelope and current limits are selected
+  together. Battery capacity follows the actual edited hourly night profile.
+- PV DC capacity is independent of inverter AC capacity. Unsupported demand
+  blocks a completed quote instead of substituting undersized equipment.
+- Optional measured simultaneous and starting demand, and no-storage operation.
+- Default 120 kWh/month with storage: 1 kW estimated planning assembly,
+  1.3 kWp PV, 2.56 kWh battery, 24 V class / 25.6 V nominal. The 1 kW assembly
+  requires storage, an external BMS and an approved grid transfer arrangement;
+  it cannot export to the grid. The compatible small batteryless choice is 3 kW.
+- Catalog sources, review date, three-phase and manufacturer compatibility
+  limitations are included in the app and proposals. These are planning designs.
+
+All 25 audited defects addressed in local source:
+1. Hourly profiles and night-energy summaries share one authoritative profile.
+2. PV and inverter losses both affect production using a disclosed DC/AC convention.
+3. PV conversion, charging, discharge, inverter and export limits constrain dispatch.
+4. Catalog overflows return a design error; no undersized clamp.
+5. Billing reconnect/restore/resume paths call Play appropriately.
+6. Purchase launch runs on Android's UI thread and surfaces its immediate result.
+7. PDF embeds licensed Unicode fonts; real fontTools replaces the previous stubs.
+8. Every export includes engineering warnings and avoids unsupported matched claims.
+9. Daily and annual consumption share monthly x 12 / 365.
+10. Live invalid/nonfinite financial and energy inputs are rejected before calculation.
+11. Steady-state SOC uses a bounded fixed-point solver; failure is explicit.
+12. Pending purchase deltas preserve existing paid access.
+13. Trial eligibility, renewal terms and annual savings use actual Play offer phases.
+14. All relevant purchases are acknowledged; failures are persisted and retried.
+15. Bounded offline/migration access, signed server verification and RTDN code.
+    Server mode remains inactive until credentials, endpoint and public key exist.
+16. INTERNET permission and validated portable TLS CA bundle configured.
+17. Verified time advances with elapsed time and retries; quote dates use UTC+8.
+18. Dirty-draft protection, current-edit duplication and durable incomplete drafts.
+19. Current-client report preview refreshes on entry.
+20. Every PDF page receives the free watermark, including automatic continuations.
+21. Reports use immutable snapshots, scheduled GPU capture, workers and atomic files.
+22. CI collects matching unstripped symbols and retains the ABI directory.
+23. CI strictly verifies the expected release signer and rejects unsigned entries.
+24. Spreadsheet and other exports include capacities, assumptions and version/quote ID.
+25. Packaged report assets resolve independently of the process working directory.
+
+Additional recommendations implemented:
+- Optional NASA POWER monthly resource lookup with site/roof/shading model, offline
+  cache, geometry-change invalidation and all-sky weather calibration.
+- Panel/battery degradation, quoted replacements, discount rate, NPV, discounted
+  payback and cost/tariff/yield sensitivity. Aging and yield effects are disclosed
+  approximations based on first-year displacement, not full lifetime hourly dispatch.
+- Chart legends, units, stored-energy meaning and grid sign convention.
+- Report history, app-copy deletion, user-selected document destinations and
+  Android document-URI backup import. Backup excludes subscription settings/tokens.
+- Actual live Android system-bar/cutout insets, keyboard handling and back navigation.
+- Responsive headings, fields, financial summaries and equipment information.
+- Pinned build toolchain/dependencies, pure source fontTools recipe, portable
+  chardet dependency and recursive ELF/16 KB checks across Python bundles.
+- Fast Python and Supabase Deno CI before packaging; local privacy copy updated.
+
+Validation
+- Final full desktop Python suite: 317 passed.
+- Supabase: 16 Deno tests, type checking and lint passed. Independent RSA signature
+  interoperability with the Python app passed using disposable test credentials.
+- Python lint, compilation, dependency consistency and whitespace checks passed.
+- Real desktop save/restore, draft recovery and asynchronous exports passed.
+- All four formats exported a Unicode sample with current version, warnings and
+  sensitivity. Samples are demonstration data, not customer quotations.
+- Layout probes at 320/360/720 widths and font scales 1.0/1.3 remained stable.
+- Debug APK built with version 1.1.0, versionCode 1024113, target API 36 and
+  minimum API 24. Recursive inspection verified 130 ARM64 loadable ELF binaries
+  with 16 KB alignment. SDK zipalign and apksigner verification passed.
+- The APK includes the CA bundle, licensed Noto fonts, Pillow 12.3.0,
+  fontTools 4.65.0, chardet 5.2.0 and certifi 2026.7.22. The 39 compiled app
+  modules matched current repository source, including the final backup fix.
+- Local test APK: bin/solarclientfinder-1.1.0-arm64-v8a-debug.apk (git-ignored).
+  SHA-256: f45f145baf921eb8511a1b3785c4c8c5ab18c788750a51a0635b68e2b481969d.
+
+Deployment status and remaining external validation
+- The existing Google Play release has not been updated. Repository source and
+  CI builds are separate from uploading a signed release in Play Console.
+- Existing Supabase host was identified in neighboring project configuration.
+  Compatible functions and deployment instructions are in backend/supabase.
+- No Google Play service-account JSON/ADC file was found in the project or common
+  local credential folders. No secrets have been installed or backend deployed.
+- A real signed Play test-track install is still required for purchase/refund/
+  expiry/restore testing, Android insets and document-provider activity behavior.
+- There is no connected Android device in this workspace. A successful build and
+  artifact inspection do not replace those device checks.

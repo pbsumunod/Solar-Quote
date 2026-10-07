@@ -1,11 +1,9 @@
 """Consumption, solar, battery, and inverter sizing calculations (Instruction.md Sections 4-13)."""
 
-# Fixed catalogs the app auto-selects from (round up to the next tier via
-# round_up_to_standard_size) so the user never has to pick a battery/inverter/panel
-# spec by hand. The solar array is always sized to the same tier as the inverter --
-# see solar_screen.py -- so there's no separate panel-wattage catalog.
-BATTERY_CAPACITY_TIERS_KWH = [5.0, 10.0, 16.0, 32.0, 40.0, 50.0, 80.0, 120.0]
-INVERTER_KW_TIERS = [6.0, 8.0, 10.0, 12.0, 16.0, 18.0]
+# Legacy tier helpers remain available to callers. Automatic compatible inverter
+# and battery module selection lives in logic.equipment; DC PV is sized separately.
+BATTERY_CAPACITY_TIERS_KWH = [2.56, 5.12, 10.24, 15.36, 20.48, 30.72, 40.96, 61.44, 122.88]
+INVERTER_KW_TIERS = [1.0, 3.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 18.0, 20.0, 25.0, 30.0, 40.0, 50.0]
 
 HOURS_ORDER = list(range(6, 24)) + list(range(0, 6))
 DAYTIME_HOUR_COUNT = 12  # first 12 entries below are 6 AM - 5 PM, the rest are 6 PM - 5 AM
@@ -29,8 +27,8 @@ def is_daytime_index(index: int) -> bool:
 
 
 def daily_consumption_kwh(monthly_kwh: float) -> float:
-    """Section 4: Monthly kWh / 30 = Average Daily Consumption."""
-    return monthly_kwh / 30
+    """Average daily consumption on the same 365-day basis used by annual ROI."""
+    return monthly_kwh * 12 / 365
 
 
 def split_day_night_kwh(daily_kwh: float, daytime_pct: int) -> tuple[float, float]:
@@ -75,14 +73,14 @@ def parse_standard_sizes(text: str) -> list[float]:
 
 
 def round_up_to_standard_size(required_kw: float, standard_sizes: list[float]) -> float | None:
-    """Section 8: round the required capacity up to the next practical standard system size."""
+    """Return a tier that meets demand, or None when the catalog cannot meet it."""
     sizes = sorted(s for s in standard_sizes if s > 0)
     if not sizes:
         return None
     for size in sizes:
         if size >= required_kw:
             return size
-    return sizes[-1]
+    return None
 
 
 def required_battery_kwh(nighttime_kwh: float, battery_dod_pct: float, battery_efficiency_pct: float) -> float:

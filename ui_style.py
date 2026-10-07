@@ -11,7 +11,7 @@ from datetime import date
 
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
-from kivy.metrics import dp
+from kivy.metrics import dp, Metrics
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.boxlayout import BoxLayout
@@ -47,10 +47,10 @@ ON_SURFACE_VARIANT = (0.282, 0.278, 0.243, 1) # #48473E, secondary/caption text 
 ON_PRIMARY_CONTAINER = (0.078, 0.200, 0.094, 1)  # #143318, text/icon on ACCENT_LIGHT
 
 LOGO_PATH = "assets/images/logo.png"
-APP_VERSION = "1.0.0"  # keep in sync with buildozer.spec's version
+APP_VERSION = "1.1.0"  # keep in sync with buildozer.spec's version
 # Bumped by hand on each delivered build -- shown on the Report and About screens
 # so a build can be confirmed at a glance instead of guessed from behavior alone.
-BUILD_LABEL = "2026-09-15-a"
+BUILD_LABEL = "2026-10-06-a"
 
 STEP_NAMES = [
     "Client Info", "Consumption", "Solar Sizing", "Battery Sizing",
@@ -190,7 +190,7 @@ def screen_header(title: str, step: int | None, on_back=None, show_logo: bool = 
     root.bind(minimum_height=root.setter("height"))
 
     bar = MDBoxLayout(
-        orientation="horizontal", spacing=dp(12), padding=(dp(12), dp(10)),
+        orientation="horizontal", spacing=dp(8), padding=(dp(8), dp(10)),
         size_hint_y=None, height=dp(56),
     )
     with bar.canvas.before:
@@ -223,9 +223,11 @@ def screen_header(title: str, step: int | None, on_back=None, show_logo: bool = 
         bar.add_widget(Widget(size_hint=(None, None), size=(dp(8), dp(8))))
 
     title_label = MDLabel(
-        text=title, bold=True, font_style="H6",
+        text=title, bold=True, font_style="Subtitle1",
         theme_text_color="Custom", text_color=ON_SURFACE,
     )
+    title_label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+                     texture_size=lambda _widget, size: setattr(bar, "height", max(dp(56), size[1] + dp(20))))
     bar.add_widget(title_label)
     if right_widget is not None:
         bar.add_widget(_centered(right_widget, width=right_widget.width or dp(90)))
@@ -258,6 +260,8 @@ def screen_header(title: str, step: int | None, on_back=None, show_logo: bool = 
         font_style="Caption", size_hint_y=None, height=dp(14),
         theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
     )
+    step_label.bind(texture_size=lambda widget, size: setattr(widget, "height", size[1]))
+    progress.bind(minimum_height=progress.setter("height"))
     progress.add_widget(step_label)
 
     track = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(4))
@@ -296,7 +300,27 @@ def m3_field(hint_text: str, icon: str | None = None, **kwargs) -> MDTextField:
         kwargs.setdefault("icon_left", icon)
         kwargs.setdefault("icon_left_color_normal", ON_SURFACE_VARIANT)
         kwargs.setdefault("icon_left_color_focus", ACCENT)
-    return MDTextField(hint_text=hint_text, **kwargs)
+    field = MDTextField(hint_text=hint_text, **kwargs)
+
+    def fit_parent(*_args):
+        parent = field.parent
+        if not isinstance(parent, BoxLayout) or parent.size_hint_y is not None:
+            return
+        fields = [child for child in parent.children if isinstance(child, MDTextField)]
+        if not fields or len(fields) != len(parent.children):
+            return
+        if not getattr(parent, "_solarquote_field_row", False):
+            if parent.orientation != "horizontal":
+                return
+            parent._solarquote_field_row = True
+            parent.bind(width=fit_parent)
+        vertical = parent.width / (len(fields) * max(1, Metrics.fontscale)) < dp(100)
+        parent.orientation = "vertical" if vertical else "horizontal"
+        content = sum(child.height for child in fields) + parent.spacing * max(0, len(fields) - 1) if vertical else max(child.height for child in fields)
+        parent.height = content + parent.padding[1] + parent.padding[3] + dp(8)
+
+    field.bind(parent=lambda *_args: Clock.schedule_once(fit_parent), height=fit_parent)
+    return field
 
 
 # Back-compat alias for any leftover callers -- prefer m3_field() for new fields.
@@ -329,9 +353,14 @@ class PickerField(ButtonBehavior, MDBoxLayout):
             text=label, font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
         )
         self._value = MDLabel(text=value, theme_text_color="Custom", text_color=ON_SURFACE)
+        for item in (self._label, self._value):
+            item.size_hint_y = None
+            item.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+                      texture_size=lambda widget, size: setattr(widget, "height", size[1]))
         col.add_widget(self._label)
         col.add_widget(self._value)
         self.add_widget(col)
+        col.bind(minimum_height=lambda _widget, height: setattr(self, "height", max(dp(52), height + dp(16))))
         self.add_widget(_icon_cell("menu-down"))
 
     def _sync(self, instance, _value) -> None:
@@ -483,6 +512,21 @@ def nav_row(on_back, next_text: str, on_next) -> MDBoxLayout:
     row.add_widget(primary_button(
         next_text, on_release=on_next, size_hint_x=None, width=dp(158), height=dp(68),
     ))
+    def fit_controls(*_args):
+        buttons = [child for child in row.children if isinstance(child, (MDFillRoundFlatButton, MDRoundFlatButton))]
+        spacers = [child for child in row.children if type(child) is Widget]
+        vertical = sum(button.width for button in buttons) + row.spacing * len(buttons) > row.width
+        row.orientation = "vertical" if vertical else "horizontal"
+        for spacer in spacers:
+            spacer.size_hint_y = None if vertical else 1
+            spacer.height = 0 if vertical else dp(68)
+        for button in buttons:
+            button.pos_hint = {"center_x": 0.5} if vertical else {}
+        row.height = sum(button.height for button in buttons) + row.spacing * len(buttons) if vertical else max((button.height for button in buttons), default=dp(68))
+    row.bind(width=fit_controls)
+    for child in row.children:
+        child.bind(width=fit_controls)
+    Clock.schedule_once(fit_controls)
     return row
 
 
@@ -542,9 +586,12 @@ def section_card(icon: str, title: str) -> MDBoxLayout:
         size_hint=(None, None), size=(dp(17), dp(17)),
     ))
     header.add_widget(badge)
-    header.add_widget(MDLabel(
+    title_label = MDLabel(
         text=title.upper(), bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
-    ))
+    )
+    title_label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+                     texture_size=lambda _widget, size: setattr(header, "height", max(dp(30), size[1] + dp(4))))
+    header.add_widget(title_label)
     card.add_widget(header)
     return card
 
@@ -571,9 +618,12 @@ def section_label(icon: str, title: str) -> MDBoxLayout:
     clash with custom theming or fight a widget's own dynamic sizing."""
     row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(24))
     row.add_widget(_icon_cell(icon, color=ACCENT, size=18, width=20))
-    row.add_widget(MDLabel(
+    label = MDLabel(
         text=title.upper(), bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
-    ))
+    )
+    label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+               texture_size=lambda _widget, size: setattr(row, "height", max(dp(24), size[1] + dp(4))))
+    row.add_widget(label)
     return row
 
 
@@ -628,211 +678,97 @@ def _show_simple_message(title: str, text: str) -> None:
 
 
 def show_paywall(screen, reason: str = "", on_change=None) -> None:
-    """Show an upgrade dialog for free-tier limitations."""
+    """Show actual eligible Play offers, with a desktop-only development trial."""
+    from kivy.utils import platform
+    from kivymd.app import MDApp
     from kivymd.uix.button import MDFlatButton
     from kivymd.uix.dialog import MDDialog
-
     from db import database
 
-    tier = database.get_tier()
-    trial_end = database.get_trial_end()
-
-    if tier == "pro":
+    if database.get_tier() == "pro":
         _show_simple_message("Already Pro", "You already have SolarQuote Pro!")
         return
-
-    # Check if user has an active trial
-    if trial_end:
-        try:
-            end = date.fromisoformat(trial_end)
-            today = database.get_trusted_today()
-            if today <= end:
-                remaining = (end - today).days
-                _show_simple_message(
-                    "Free Trial Active",
-                    f"You have {remaining} day(s) left in your free trial.\n\n"
-                    "Upgrade to Pro to keep all features after your trial ends.",
-                )
-                return
-        except (TypeError, ValueError):
-            pass
-
-    # Get billing manager
-    try:
-        from kivymd.app import MDApp
-        billing = MDApp.get_running_app().billing
-        monthly_price = billing.get_monthly_price()
-        yearly_price = billing.get_yearly_price()
-        yearly_savings = billing.get_yearly_savings()
-    except Exception:
-        monthly_price = "P299/month"
-        yearly_price = "P2,990/year"
-        yearly_savings = "Save 17%"
-        billing = None
-
-    text = "Unlock all SolarQuote Pro features:\n\n"
-    text += "- Unlimited saved projects\n"
-    text += "- Export PDF, Excel, CSV & PowerPoint\n"
-    text += "- No watermark on reports\n"
-    text += "- 7-day free trial\n\n"
-    text += f"Monthly: {monthly_price}\n"
-    text += f"Yearly: {yearly_price} ({yearly_savings})"
-
+    billing = getattr(MDApp.get_running_app(), "billing", None)
+    trial_terms = billing.get_trial_terms() if billing and platform == "android" else None
+    monthly = billing.get_monthly_price() if billing else "Unavailable"
+    yearly = billing.get_yearly_price() if billing else "Unavailable"
+    savings = billing.get_yearly_savings() if billing else ""
+    text = ("Unlock SolarQuote Pro:\n\n"
+            "- Unlimited saved projects\n"
+            "- PDF, Excel, CSV & PowerPoint exports\n"
+            "- Reports without a watermark\n\n")
+    if platform == "android":
+        text += f"Monthly: {monthly} per month\nYearly: {yearly} per year"
+        if savings:
+            text += f" ({savings})"
+        text += "\nSubscriptions renew until cancelled in Google Play."
+        if trial_terms:
+            text += "\n\n" + trial_terms
+    else:
+        text += "Paid subscriptions are available on Android through Google Play."
+        if not database.get_trial_end():
+            text += "\nA seven-day local trial is available for desktop testing."
     if reason:
-        text = f"{reason}\n\n{text}"
+        text = reason + "\n\n" + text
 
-    def _dismiss(*_args):
-        dialog.dismiss()
-
-    def _refresh_all_labels():
+    def refresh():
         if on_change:
             on_change()
-        try:
-            from kivymd.app import MDApp
-            MDApp.get_running_app().root.refresh_plan_label()
-        except Exception:
-            pass
+        MDApp.get_running_app().root.refresh_plan_label()
 
-    def _report_launch_failure(reason: str) -> None:
-        # launch_purchase() used to fail silently on every one of these --
-        # tapping Start Free Trial / Subscribe just did nothing, with no way
-        # to tell whether Play wasn't connected yet, the subscription
-        # products aren't set up/active in Play Console, or something else
-        # entirely. "" means it actually launched (Play's own sheet is
-        # showing now); anything else needs a message so the user isn't
-        # left staring at an unresponsive button.
-        if not reason or reason == "not_android":
+    def purchase_result(result):
+        if result in ("", "cancelled", "launch_pending"):
             return
         messages = {
-            "not_connected": (
-                "Could not connect to Google Play Billing. Check your internet "
-                "connection and try again in a moment."
-            ),
-            "product_not_ready": (
-                "Still loading subscription details from Google Play -- try again "
-                "in a few seconds. If this keeps happening, the subscription may "
-                "not be active in Play Console yet."
-            ),
-            "launch_failed": "Could not open the Google Play purchase screen. Please try again.",
+            "not_connected": "Google Play Billing is unavailable. Please try again after reconnecting.",
+            "product_not_ready": "Loading current prices from Google Play. Please try again in a moment.",
+            "trial_unavailable": "No free trial is currently available for this Google Play account.",
+            "already_owned": "Checking your existing subscription in Google Play.",
+            "unavailable": "This subscription is unavailable for your Google Play account.",
         }
-        _show_simple_message(
-            "Couldn't Open Purchase", messages.get(reason, "Something went wrong. Please try again."),
-        )
+        _show_simple_message("Purchase", messages.get(result, "Could not open Google Play. Please try again."))
 
-    def _start_trial(*_args):
+    def purchase(product_id, trial=False):
         dialog.dismiss()
-        from kivy.utils import platform
+        if not billing:
+            _show_simple_message("Billing Unavailable", "Google Play Billing is unavailable. Please try again later.")
+            return
+        billing.launch_purchase(product_id, on_complete=purchase_result, trial_only=trial)
 
-        if billing and platform == "android":
-            # Routed through a real Google Play purchase (of the monthly
-            # plan) rather than granted locally: a locally-granted trial has
-            # no way to stop someone from just reinstalling the app to get
-            # another one, since nothing here is tied to their Google
-            # account. Play's own trial phase (configured on the monthly
-            # subscription's base plan in Play Console) is tracked
-            # server-side per account, so Play itself refuses to grant the
-            # same account a second free trial on this subscription -- that
-            # actually closes the loophole. The trial-vs-already-billed
-            # terms are shown by Play's own purchase sheet, not this dialog;
-            # granting Pro access happens asynchronously once Play reports
-            # the resulting purchase back (see billing.py's
-            # PurchasesUpdatedListener), not synchronously here.
-            reason = billing.launch_purchase("solarquote_pro_monthly")
-            if reason:
-                _report_launch_failure(reason)
-            else:
-                _show_simple_message(
-                    "Continue in Google Play",
-                    "Finish setting up your subscription in the Google Play sheet "
-                    "that just opened -- it'll show your free trial terms before "
-                    "anything is charged.",
-                )
-        else:
-            # Non-Android (desktop dev/testing) or billing unavailable: no
-            # Play account to tie a real trial to, so fall back to a purely
-            # local grant. This path can't defend against a reinstall, but
-            # it's also never reachable by a real Play Store user.
-            from datetime import timedelta
-            end = database.get_trusted_today() + timedelta(days=7)
-            database.set_trial_end(end.isoformat())
-            database.set_pro_source("trial")
-            database.set_tier("pro")
-            _refresh_all_labels()
-            _show_simple_message(
-                "Trial Started",
-                "Your 7-day free trial has started!\n\n"
-                "All Pro features are now unlocked.",
-            )
-
-    def _subscribe_monthly(*_args):
+    def desktop_trial(*_args):
         dialog.dismiss()
-        if billing:
-            from kivy.utils import platform
-            if platform == "android":
-                _report_launch_failure(billing.launch_purchase("solarquote_pro_monthly"))
-            else:
-                _show_simple_message(
-                    "Subscribe",
-                    "Subscriptions are available on Android via Google Play.\n\n"
-                    "On this device you can only test the 7-day free trial.",
-                )
-        _refresh_all_labels()
+        if platform == "android" or not billing:
+            _show_simple_message("Trial Unavailable", "Trials on Android are offered through Google Play.")
+            return
+        billing.start_trial()
+        refresh()
+        _show_simple_message("Trial Started", "Your seven-day desktop trial has started.")
 
-    def _subscribe_yearly(*_args):
-        dialog.dismiss()
-        if billing:
-            from kivy.utils import platform
-            if platform == "android":
-                _report_launch_failure(billing.launch_purchase("solarquote_pro_yearly"))
-            else:
-                _show_simple_message(
-                    "Subscribe",
-                    "Subscriptions are available on Android via Google Play.\n\n"
-                    "On this device you can only test the 7-day free trial.",
-                )
-        _refresh_all_labels()
-
-    buttons = [
-        MDFlatButton(text="Not Now", text_color=ACCENT, on_release=_dismiss),
-    ]
-
-    if not trial_end:
-        buttons.append(
-            MDFlatButton(text="Start Free Trial", text_color=ACCENT, on_release=_start_trial),
-        )
-
-    # Both plans from the pricing shown above need their own button --
-    # previously only "Subscribe" existed and it always bought the monthly
-    # plan, so the yearly price was advertised but unreachable.
-    buttons.append(
-        MDFlatButton(text="Subscribe Monthly", text_color=ACCENT, on_release=_subscribe_monthly),
-    )
-    buttons.append(
-        MDFlatButton(text="Subscribe Yearly", text_color=ACCENT, on_release=_subscribe_yearly),
-    )
-
-    # MDDialog's own `buttons=` layout (button_box) is a single horizontal
-    # row sized to fit its children's natural width, with no wrapping --
-    # fine for one or two short buttons, but with up to four ("Not Now",
-    # "Start Free Trial", "Subscribe Monthly", "Subscribe Yearly") it grows
-    # far wider than MDDialog's own 280dp mobile width cap and overflows the
-    # card. Same fix as the export-success dialog: build the content
-    # ourselves as one button per row, each full-width, via type="custom".
+    buttons = []
+    if platform == "android":
+        if trial_terms:
+            buttons.append(MDFlatButton(text="Start Free Trial", text_color=ACCENT,
+                on_release=lambda *_: purchase("solarquote_pro_monthly", True)))
+        for label, product_id in (("Subscribe Monthly", "solarquote_pro_monthly"),
+                                  ("Subscribe Yearly", "solarquote_pro_yearly")):
+            buttons.append(MDFlatButton(text=label, text_color=ACCENT,
+                on_release=lambda *_, product=product_id: purchase(product)))
+    elif not database.get_trial_end():
+        buttons.append(MDFlatButton(text="Start Desktop Trial", text_color=ACCENT, on_release=desktop_trial))
+    buttons.append(MDFlatButton(text="Not Now", text_color=ACCENT, on_release=lambda *_: dialog.dismiss()))
     content = MDBoxLayout(orientation="vertical", spacing=dp(12), padding=dp(4), size_hint_y=None)
     text_label = MDLabel(text=text, theme_text_color="Custom", text_color=TEXT_DARK, size_hint_y=None)
     text_label.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
     text_label.bind(texture_size=lambda inst, val: setattr(inst, "height", val[1]))
     content.add_widget(text_label)
-
     btn_col = MDBoxLayout(orientation="vertical", spacing=dp(4), size_hint_y=None)
-    for btn in buttons:
-        btn.size_hint_x = 1
-        btn.size_hint_y = None
-        btn.height = dp(44)
-        btn_col.add_widget(btn)
+    for button in buttons:
+        button.size_hint_x = 1
+        button.size_hint_y = None
+        button.height = dp(44)
+        btn_col.add_widget(button)
     btn_col.bind(minimum_height=btn_col.setter("height"))
     content.add_widget(btn_col)
     content.bind(minimum_height=content.setter("height"))
-
     dialog = MDDialog(title="Upgrade to Pro", type="custom", content_cls=content)
     dialog.open()

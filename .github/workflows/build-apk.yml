@@ -20,8 +20,14 @@ on:
       - "assets/**"
       - ".github/workflows/build-apk.yml"
 
+permissions:
+  contents: read
+
 jobs:
+  checks:
+    uses: ./.github/workflows/test.yml
   build:
+    needs: checks
     # Pinned to 22.04, not ubuntu-latest (24.04): 24.04's newer autoconf/libtool
     # is stricter about macro expansion than several p4a recipes' bundled,
     # long-unmaintained configure.ac scripts expect -- e.g. libffi's fails
@@ -29,17 +35,9 @@ jobs:
     # 22.04 matches the toolchain these recipes actually build cleanly against.
     runs-on: ubuntu-22.04
     env:
-      # fonttools (a plain pip requirement with no p4a recipe, so it's installed
-      # by running its own setup.py on the x86_64 build host) auto-builds a
-      # compiled Cython accelerator for fontTools.misc.bezierTools whenever
-      # Cython is importable -- which it is here, since Kivy's own recipe needs
-      # the "cython" package installed on the host to cythonize its .pyx
-      # sources before cross-compiling. That leaves an x86_64 bezierTools.so
-      # bundled straight into the arm64-v8a APK, which then fails on-device
-      # with "dlopen failed: ... is for EM_X86_64 (62) instead of EM_AARCH64
-      # (183)". fontTools' setup.py reads this env var to force the pure-Python
-      # build instead of auto-detecting Cython -- see its `env_with_cython`
-      # check -- without touching Kivy's own (separate) cythonizing step.
+      # The local fontTools source recipe disables optional Cython accelerators.
+      # Retain this flag for any additional source installs; recursive artifact
+      # verification also rejects host wheels inside the Python bundle.
       FONTTOOLS_WITH_CYTHON: "0"
     steps:
       - uses: actions/checkout@v4
@@ -66,13 +64,13 @@ jobs:
             libffi-dev libssl-dev automake build-essential
 
       - name: Install Buildozer
-        run: pip install --upgrade buildozer cython
+        run: pip install buildozer==1.5.0 Cython==3.0.12
 
       - name: Cache Buildozer global directory (SDK/NDK)
         uses: actions/cache@v4
         with:
           path: ~/.buildozer
-          key: buildozer-global-v2-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-global-v2-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}
 
       - name: Cache Buildozer project directory (compiled recipes)
         uses: actions/cache@v4
@@ -82,9 +80,9 @@ jobs:
           # pip-installed with a bad x86_64-compiled bezierTools.so baked in
           # (see FONTTOOLS_WITH_CYTHON above) -- restore-keys would otherwise
           # keep restoring that stale install and skip reinstalling it.
-          key: buildozer-v4-${{ hashFiles('buildozer.spec') }}-${{ github.sha }}
+          key: buildozer-v4-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}-${{ github.sha }}
           restore-keys: |
-            buildozer-v4-${{ hashFiles('buildozer.spec') }}-
+            buildozer-v4-${{ hashFiles('buildozer.spec', 'recipes/**', 'p4a_hooks.py', 'android_res/**', '.github/workflows/build*.yml') }}-
 
       - name: Build APK
         env:
@@ -94,6 +92,14 @@ jobs:
           # rebuild.
           CFLAGS: "-D_DEFAULT_SOURCE"
         run: yes | buildozer android debug
+
+      - name: Check native architecture and 16 KB ELF alignment
+        run: |
+          APK_FILE=$(find bin -name "*.apk" | head -n1)
+          python scripts/check_android_artifact.py "$APK_FILE"
+          ZIPALIGN=$(find "$HOME/.buildozer" -path '*/build-tools/36.0.0/zipalign' -print -quit)
+          test -n "$ZIPALIGN"
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK_FILE"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

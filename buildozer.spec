@@ -4,32 +4,17 @@ package.name = solarclientfinder
 package.domain = org.solarclientfinder
 
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
-source.exclude_dirs = tests, assets/icon, assets/splash, assets/store_screenshots
+source.include_exts = py,png,jpg,kv,atlas,ttf,txt
+source.exclude_dirs = tests, backend, scripts, recipes, docs, assets/icon, assets/splash, assets/store_screenshots
 source.exclude_patterns = p4a_hooks.py, assets/feature_graphic.png, assets/SolarQuote_Icon_512x512.png
 
-# versionName (cosmetic, shown to users -- bump however you like). Reset to
-# 0.1.0 for the first real Closed Testing release: every 0.1.1-0.1.9 build
-# before this was internal iteration/debugging (Play Billing fixes, edge-to-
-# edge layout, etc.), not a milestone worth exposing to testers -- this is
-# meant to read as the actual "first release" version.
-version = 1.0.0
+# User-visible version for the reviewed feature and correctness update.
+version = 1.1.0
 
-# versionCode (invisible to users, but must strictly increase on EVERY
-# upload to Play Console, across every track, forever -- once a number is
-# used it can never be reused, even for a deleted release, and it does NOT
-# reset just because `version` above did). Left unset, python-for-android
-# auto-derives one from `version` above, which is what produced a collision
-# here: the API-34 and API-35 builds both had version=0.1.0, so both got the
-# identical auto-derived versionCode, and Play Console rejected the second
-# upload as a dupe.
-# Bump this by at least 1 before every new build you intend to upload
-# anywhere in Play Console, regardless of what `version` says. Play Console
-# has already seen numeric_version values up through 1024109 from this
-# session's internal-testing uploads, so this closed-testing release must
-# clear that even though `version` itself reset to 0.1.0.
-android.numeric_version = 1024112
-requirements = python3==3.11.9,hostpython3==3.11.9,kivy==2.3.1,kivymd==1.2.0,sqlite3,openpyxl,et_xmlfile,fpdf2==2.7.9,fonttools,defusedxml,pillow,lxml,python-pptx,typing_extensions,plyer
+# Explicit versionCode increases the previous repository value, 1024112.
+# Increase it for each subsequent Play upload, across all release tracks.
+android.numeric_version = 1024113
+requirements = certifi==2026.7.22,chardet==5.2.0,python3==3.11.9,hostpython3==3.11.9,kivy==2.3.1,kivymd==1.2.0,sqlite3,openpyxl==3.1.5,et_xmlfile==2.0.0,fpdf2==2.7.9,fonttools==4.65.0,defusedxml==0.7.1,Pillow==12.3.0,lxml==5.2.2,python-pptx==1.0.2,typing_extensions==4.16.0,plyer==2.1.0
 
 orientation = portrait
 fullscreen = 0
@@ -38,21 +23,19 @@ presplash.filename = %(source.dir)s/assets/splash/logo_splash.png
 android.presplash_color = #FDFCF8
 
 p4a.local_recipes = ./recipes
+p4a.commit = 58d21141f17c889bf8585f5665921d72028f8831
 
-# Play Console requires new/updated apps to target a recent API level (36 as
-# of this build) -- it flags anything older as a submission-blocking error,
-# not just a warning. This is a Play policy floor, not a hard requirement of
-# the code itself, so it moves up roughly yearly; re-check Play Console's
-# error message (it names the current minimum) if this ever gets flagged
-# again in the future.
+# Explicit target API; review current Play target-API policy for each release.
 android.api = 36
 android.minapi = 24
-# NDK r28b emits 16 KB-aligned native libraries by default, required by
+# NDK r28c emits 16 KB-aligned native libraries by default, required by
 # Google Play for 64-bit apps targeting Android 15/API 35 and higher.
-android.ndk = 28b
+android.ndk = 28c
 android.archs = arm64-v8a
 android.build_tools = 36.0.0
 android.enable_androidx = True
+android.permissions = INTERNET
+android.allow_backup = False
 p4a.hook = ./p4a_hooks.py
 # Retain DWARF data during the release build so CI can create the native
 # debug-symbol archive that Google Play uses to symbolicate crash reports.
@@ -84,7 +67,7 @@ p4a.extra_args = --with-debug-symbols
 # lets Gradle's ordinary highest-version-wins resolution upgrade that old
 # reference to the harmless post-merge stub instead.
 android.gradle_dependencies = androidx.core:core:1.12.0,com.android.billingclient:billing:9.1.0,org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.8.22,org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.22
-android.res_xml = android_res/file_paths.xml
+android.res_xml = android_res/file_paths.xml, android_res/backup_rules.xml, android_res/data_extraction_rules.xml
 
 # Play Console requires an Android App Bundle (.aab) for new app uploads, not
 # a raw .apk (Google stopped accepting .apk for new apps in Aug 2021). This
