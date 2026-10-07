@@ -135,8 +135,8 @@ jobs:
           keytool -genkeypair -keystore "$RUNNER_TEMP/check.keystore" -storepass android -keypass android -alias androiddebugkey -dname "CN=Alignment Check" -keyalg RSA -keysize 2048 -validity 1
           java -jar "$BUNDLETOOL" build-apks --bundle="$AAB_FILE" --output="$RUNNER_TEMP/check.apks" --mode=universal --ks="$RUNNER_TEMP/check.keystore" --ks-key-alias=androiddebugkey --ks-pass=pass:android --key-pass=pass:android
           unzip -p "$RUNNER_TEMP/check.apks" universal.apk > "$RUNNER_TEMP/check.apk"
-          ZIPALIGN=$(find "$HOME/.buildozer" -path '*/build-tools/36.0.0/zipalign' -print -quit)
-          test -n "$ZIPALIGN"
+          ZIPALIGN=$(find "$HOME/.buildozer" "${ANDROID_HOME:-$HOME/.buildozer}" -type f -path '*/build-tools/*/zipalign' | sort -V | tail -n1)
+          test -x "$ZIPALIGN" || { echo "::error::zipalign not found in installed Android build tools"; exit 1; }
           "$ZIPALIGN" -c -P 16 -v 4 "$RUNNER_TEMP/check.apk"
 
       - name: Collect matching unstripped native symbols

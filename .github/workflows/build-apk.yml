@@ -93,14 +93,6 @@ jobs:
           CFLAGS: "-D_DEFAULT_SOURCE"
         run: yes | buildozer android debug
 
-      - name: Check native architecture and 16 KB ELF alignment
-        run: |
-          APK_FILE=$(find bin -name "*.apk" | head -n1)
-          python scripts/check_android_artifact.py "$APK_FILE"
-          ZIPALIGN=$(find "$HOME/.buildozer" -path '*/build-tools/36.0.0/zipalign' -print -quit)
-          test -n "$ZIPALIGN"
-          "$ZIPALIGN" -c -P 16 -v 4 "$APK_FILE"
-
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
@@ -116,3 +108,11 @@ jobs:
           # A debug APK is a hand-off: downloaded, installed, superseded by
           # the next build. Three days is far more than it is ever needed for.
           retention-days: 3
+
+      - name: Check native architecture and 16 KB ELF alignment
+        run: |
+          APK_FILE=$(find bin -name "*.apk" | head -n1)
+          python scripts/check_android_artifact.py "$APK_FILE"
+          ZIPALIGN=$(find "$HOME/.buildozer" "${ANDROID_HOME:-$HOME/.buildozer}" -type f -path '*/build-tools/*/zipalign' | sort -V | tail -n1)
+          test -x "$ZIPALIGN" || { echo "::error::zipalign not found in installed Android build tools"; exit 1; }
+          "$ZIPALIGN" -c -P 16 -v 4 "$APK_FILE"
