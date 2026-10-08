@@ -19,7 +19,7 @@ from logic.calculations import battery_usable_capacity_kwh
 from logic.equipment import refresh_equipment_design
 from logic.quote_validation import finite_float_or, live_float_or
 from ui_style import (
-    ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, keep_focused_field_visible, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
+    ACCENT, TEXT_DARK, about_button, go_home, header_actions, icon_button, m3_field, nav_row, save_button, save_current_project, screen_header, section_card, tonal_button, with_bg,
 )
 
 DEFAULT_BATTERY_DOD_PCT = 80.0
@@ -82,15 +82,15 @@ class BatteryScreen(MDScreen):
 
         result_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
         self.recommended_label = with_bg(MDLabel(
-            text="-- kWh", bold=True, theme_text_color="Custom", text_color=ACCENT, size_hint_y=None,
+            text="-- kWh", bold=True, halign="center", valign="middle",
+            theme_text_color="Custom", text_color=ACCENT, size_hint_y=None, height=dp(44),
         ))
         result_row.add_widget(self.recommended_label)
         calculation_button = tonal_button(
             "SHOW CALCULATION", on_release=self._show_calculation, size_hint_x=None, width=dp(170),
         )
         result_row.add_widget(calculation_button)
-        self.recommended_label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
-                                    texture_size=lambda widget, size: setattr(widget, "height", size[1] + dp(8)))
+        self.recommended_label.bind(size=lambda widget, size: setattr(widget, "text_size", size))
         def fit_result(*_args):
             vertical = result_row.width / max(1, Metrics.fontscale) < dp(320)
             result_row.orientation = "vertical" if vertical else "horizontal"
@@ -117,7 +117,6 @@ class BatteryScreen(MDScreen):
         form.add_widget(nav_row(self._go_back, "Next: System Design", self._go_next))
 
         scroll.add_widget(form)
-        keep_focused_field_visible(scroll, form)
         root.add_widget(scroll)
         self.add_widget(root)
 

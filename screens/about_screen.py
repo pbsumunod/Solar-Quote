@@ -71,7 +71,7 @@ class AboutScreen(MDScreen):
         form = MDBoxLayout(orientation="vertical", spacing=dp(16), padding=dp(16), size_hint_y=None)
         form.bind(minimum_height=form.setter("height"))
 
-        header = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(56))
+        header = BoxLayout(spacing=dp(12), size_hint_y=None, height=dp(64))
         logo_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(56))
         logo_cell.add_widget(Image(source=LOGO_PATH, size_hint=(None, None), size=(dp(48), dp(48))))
         header.add_widget(logo_cell)

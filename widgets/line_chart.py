@@ -7,6 +7,8 @@ Discharge floor). Y-axis reference values are shown on both the left and right
 edges. Redraws whenever the widget is resized or set_data() is called again.
 """
 
+from math import ceil
+
 from kivy.graphics import Color, Ellipse, Line, Mesh
 from kivy.metrics import dp
 from kivy.properties import NumericProperty
@@ -187,8 +189,14 @@ class LineChart(Widget):
             self.add_widget(lbl)
             self._tick_labels.append(lbl)
 
+        tick_spacing = (dp(30) + dp(4)) * scale
+        tick_every = max(TICK_EVERY, ceil((n - 1) * tick_spacing / plot_w)) if n > 1 else 1
         for i, label in enumerate(self._x_labels):
-            if i % TICK_EVERY != 0 and i != n - 1:
+            if i != n - 1 and i % tick_every != 0:
+                continue
+            # Keep the final year/hour visible without placing it on top of
+            # the preceding regular tick on narrow charts.
+            if 0 < i < n - 1 and (n - 1 - i) * plot_w / (n - 1) < tick_spacing:
                 continue
             fx, _fy = px(i, 0)
             lbl = Label(

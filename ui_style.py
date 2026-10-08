@@ -286,7 +286,16 @@ def screen_header(title: str, step: int | None, on_back=None, show_logo: bool = 
 
 # --- M3 outlined text field -------------------------------------------------------
 
-def m3_field(hint_text: str, icon: str | None = None, **kwargs) -> MDTextField:
+class AlignedFloatingLabelTextField(MDTextField):
+    """Keep icon-free floating labels inside KivyMD's rectangle notch."""
+
+    def set_pos_hint_text(self, y: float, x: float = 12) -> None:
+        if self.mode == "rectangle" and not self.icon_left:
+            x = dp(16)
+        super().set_pos_hint_text(y, x)
+
+
+def m3_field(hint_text: str, icon: str | None = None, field_class=MDTextField, **kwargs) -> MDTextField:
     """An outlined, rounded Material 3-style text field with an optional leading icon."""
     kwargs.setdefault("mode", "rectangle")
     kwargs.setdefault("radius", [dp(14)] * 4)
@@ -300,7 +309,7 @@ def m3_field(hint_text: str, icon: str | None = None, **kwargs) -> MDTextField:
         kwargs.setdefault("icon_left", icon)
         kwargs.setdefault("icon_left_color_normal", ON_SURFACE_VARIANT)
         kwargs.setdefault("icon_left_color_focus", ACCENT)
-    field = MDTextField(hint_text=hint_text, **kwargs)
+    field = field_class(hint_text=hint_text, **kwargs)
 
     def fit_parent(*_args):
         parent = field.parent
@@ -314,7 +323,10 @@ def m3_field(hint_text: str, icon: str | None = None, **kwargs) -> MDTextField:
                 return
             parent._solarquote_field_row = True
             parent.bind(width=fit_parent)
-        vertical = parent.width / (len(fields) * max(1, Metrics.fontscale)) < dp(100)
+        # A field's label needs considerably more room than its numeric value.
+        # Phone-width pairs otherwise crop labels such as "PV Efficiency %"
+        # and "Round Trip Efficiency %" even though the field boxes fit.
+        vertical = parent.width / (len(fields) * max(1, Metrics.fontscale)) < dp(210)
         parent.orientation = "vertical" if vertical else "horizontal"
         content = sum(child.height for child in fields) + parent.spacing * max(0, len(fields) - 1) if vertical else max(child.height for child in fields)
         parent.height = content + parent.padding[1] + parent.padding[3] + dp(8)
@@ -329,39 +341,95 @@ def green_field(**kwargs) -> MDTextField:
     return m3_field(hint_text, **kwargs)
 
 
+def _field_caption(text: str) -> MDBoxLayout:
+    """A caption aligned inside an outlined field's horizontal bounds."""
+    row = MDBoxLayout(padding=(dp(12), 0, dp(12), 0), size_hint_y=None, height=dp(18))
+    label = MDLabel(
+        text=text, font_style="Caption", halign="left", size_hint_y=None,
+        theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
+    )
+    label.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)))
+
+    def fit_height(widget, size):
+        widget.height = size[1]
+        row.height = size[1] + dp(2)
+
+    label.bind(texture_size=fit_height)
+    row.add_widget(label)
+    return row
+
+
+def labeled_m3_field(title: str, icon: str | None = None, **kwargs) -> tuple[MDTextField, MDBoxLayout]:
+    """Wrap the shared floating-label field for responsive Step 7 rows."""
+    field = m3_field(title, icon=icon, field_class=AlignedFloatingLabelTextField, **kwargs)
+    field.size_hint_y = None
+    wrapper = MDBoxLayout(orientation="vertical", size_hint_y=None)
+    wrapper.bind(minimum_height=wrapper.setter("height"))
+    wrapper.add_widget(field)
+    return field, wrapper
+
+
+def labeled_field_row(*wrappers: MDBoxLayout) -> MDBoxLayout:
+    """Keep titled fields paired when their captions have sufficient width."""
+    row = MDBoxLayout(orientation="horizontal", spacing=dp(10), size_hint_y=None)
+    for wrapper in wrappers:
+        row.add_widget(wrapper)
+
+    def fit(*_args):
+        vertical = row.width / (len(wrappers) * max(1, Metrics.fontscale)) < dp(210)
+        row.orientation = "vertical" if vertical else "horizontal"
+        heights = [wrapper.height for wrapper in wrappers]
+        row.height = (sum(heights) + row.spacing * (len(heights) - 1)
+                      if vertical else max(heights, default=dp(52)))
+
+    row.bind(width=fit)
+    for wrapper in wrappers:
+        wrapper.bind(height=fit)
+    Clock.schedule_once(fit)
+    return row
+
+
 class PickerField(ButtonBehavior, MDBoxLayout):
     """An outlined row styled like m3_field but tappable, for actions that open a
     dropdown menu or bottom sheet (country, ratio, scenario, maintenance method)
     instead of taking direct text input."""
 
     def __init__(self, icon: str, label: str, value: str = "", **kwargs):
-        kwargs.setdefault("orientation", "horizontal")
+        kwargs.setdefault("orientation", "vertical")
         kwargs.setdefault("size_hint_y", None)
-        kwargs.setdefault("height", dp(52))
-        kwargs.setdefault("padding", (dp(12), 0))
-        kwargs.setdefault("spacing", dp(10))
+        kwargs.setdefault("height", dp(74))
+        kwargs.setdefault("spacing", dp(4))
         super().__init__(**kwargs)
 
-        with self.canvas.before:
+        caption = _field_caption(label)
+        self.add_widget(caption)
+        self._row = MDBoxLayout(
+            orientation="horizontal", spacing=dp(10), padding=(dp(12), 0),
+            size_hint_y=None, height=dp(52),
+        )
+        with self._row.canvas.before:
             Color(*OUTLINE)
             self._border = Line(rounded_rectangle=(0, 0, 0, 0, 14), width=1.2)
-        self.bind(pos=self._sync, size=self._sync)
+        self._row.bind(pos=self._sync, size=self._sync)
 
-        self.add_widget(_icon_cell(icon))
-        col = BoxLayout(orientation="vertical")
-        self._label = MDLabel(
-            text=label, font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
+        self._row.add_widget(_icon_cell(icon))
+        value_cell = AnchorLayout(anchor_x="left", anchor_y="center")
+        self._value = MDLabel(
+            text=value, halign="left", theme_text_color="Custom", text_color=ON_SURFACE,
+            size_hint=(1, None),
         )
-        self._value = MDLabel(text=value, theme_text_color="Custom", text_color=ON_SURFACE)
-        for item in (self._label, self._value):
-            item.size_hint_y = None
-            item.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
-                      texture_size=lambda widget, size: setattr(widget, "height", size[1]))
-        col.add_widget(self._label)
-        col.add_widget(self._value)
-        self.add_widget(col)
-        col.bind(minimum_height=lambda _widget, height: setattr(self, "height", max(dp(52), height + dp(16))))
-        self.add_widget(_icon_cell("menu-down"))
+        self._value.bind(width=lambda widget, width: setattr(widget, "text_size", (width, None)),
+                         texture_size=lambda widget, size: setattr(widget, "height", size[1]),
+                         height=self._fit_content)
+        value_cell.add_widget(self._value)
+        self._row.add_widget(value_cell)
+        self._row.add_widget(_icon_cell("menu-down"))
+        self.add_widget(self._row)
+        caption.bind(height=self._fit_content)
+
+    def _fit_content(self, *_args) -> None:
+        self._row.height = max(dp(52), self._value.height + dp(20))
+        self.height = self.children[-1].height + self.spacing + self._row.height
 
     def _sync(self, instance, _value) -> None:
         self._border.rounded_rectangle = (instance.x, instance.y, instance.width, instance.height, 14)
@@ -376,7 +444,7 @@ class PickerField(ButtonBehavior, MDBoxLayout):
 
     @text.setter
     def text(self, value: str) -> None:
-        self._value.text = value
+        self.set_value(value)
 
 
 def picker_field(icon: str, label: str, value: str, on_release) -> PickerField:
@@ -569,6 +637,9 @@ def section_card(icon: str, title: str) -> MDBoxLayout:
     card.bind(pos=_sync_card, size=_sync_card)
 
     header = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(30))
+    badge_cell = AnchorLayout(
+        anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(30),
+    )
     badge = AnchorLayout(
         anchor_x="center", anchor_y="center", size_hint=(None, None), size=(dp(30), dp(30)),
     )
@@ -585,7 +656,8 @@ def section_card(icon: str, title: str) -> MDBoxLayout:
         icon=icon, theme_text_color="Custom", text_color=ON_PRIMARY_CONTAINER,
         size_hint=(None, None), size=(dp(17), dp(17)),
     ))
-    header.add_widget(badge)
+    badge_cell.add_widget(badge)
+    header.add_widget(badge_cell)
     title_label = MDLabel(
         text=title.upper(), bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
     )
@@ -630,7 +702,7 @@ def section_label(icon: str, title: str) -> MDBoxLayout:
 def project_row(subtitle: str, value: str, on_switch, on_new, on_more) -> MDBoxLayout:
     """The de-emphasized project switcher row: current project name + New/overflow
     actions, styled as a tonal pill so it doesn't compete with the form below it."""
-    row = MDBoxLayout(spacing=dp(10), padding=(dp(14), dp(8), dp(8), dp(8)), size_hint_y=None, height=dp(52))
+    row = MDBoxLayout(spacing=dp(10), padding=(dp(14), dp(8), dp(8), dp(8)), size_hint_y=None, height=dp(64))
     with row.canvas.before:
         Color(*SURFACE_CONTAINER)
         row_rect = RoundedRectangle(pos=row.pos, size=row.size, radius=[dp(14)])
@@ -644,7 +716,10 @@ def project_row(subtitle: str, value: str, on_switch, on_new, on_more) -> MDBoxL
     row.add_widget(_icon_cell("file-document-outline", size=20, width=22))
     col = BoxLayout(orientation="vertical")
     col.add_widget(MDLabel(text=subtitle, font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT))
-    value_label = MDLabel(text=value, bold=True, theme_text_color="Custom", text_color=ON_SURFACE, shorten=True)
+    value_label = MDLabel(
+        text=value, bold=True, theme_text_color="Custom", text_color=ON_SURFACE,
+        shorten=True, shorten_from="right",
+    )
     col.add_widget(value_label)
     # Wrap the label column itself so tapping the project name/value opens the switcher.
     wrapper = _Tappable(on_switch)

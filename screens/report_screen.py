@@ -17,6 +17,7 @@ from pathlib import Path
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.utils import platform
 from kivymd.app import MDApp
@@ -190,9 +191,21 @@ class ReportScreen(MDScreen):
         form.add_widget(preview_card)
 
         export_card = section_card("printer-outline", "Export")
+        export_grid = GridLayout(cols=1, spacing=dp(10), size_hint_y=None)
+        export_grid.bind(minimum_height=export_grid.setter("height"))
+        export_grid.bind(width=lambda widget, width: setattr(widget, "cols", 2 if width >= dp(580) else 1))
         for label, kind in (("EXPORT PDF", "pdf"), ("EXPORT EXCEL", "excel"), ("EXPORT CSV", "csv"), ("EXPORT POWERPOINT", "pptx")):
-            export_card.add_widget(tonal_button(label, on_release=lambda selected=kind: self._export(selected)))
-        export_card.add_widget(tonal_button("REPORT HISTORY", on_release=self._show_history))
+            button = tonal_button(label, on_release=lambda selected=kind: self._export(selected), size_hint_x=None)
+            cell = AnchorLayout(size_hint_y=None, height=dp(44))
+            cell.bind(width=lambda widget, width, action=button: setattr(action, "width", width))
+            cell.add_widget(button)
+            export_grid.add_widget(cell)
+        export_card.add_widget(export_grid)
+        history_button = tonal_button("REPORT HISTORY", on_release=self._show_history, size_hint_x=None)
+        history_cell = AnchorLayout(size_hint_y=None, height=dp(44))
+        history_cell.bind(width=lambda widget, width: setattr(history_button, "width", width))
+        history_cell.add_widget(history_button)
+        export_card.add_widget(history_cell)
         form.add_widget(export_card)
 
         form.add_widget(section_label("information-outline", "Disclaimer"))

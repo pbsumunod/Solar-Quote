@@ -12,6 +12,7 @@ single-scenario view. Resource assumptions, losses and selected hardware limits
 feed the energy-conserving steady-state calculation in logic/simulation.py.
 """
 
+from kivy.animation import Animation
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.uix.boxlayout import BoxLayout
@@ -110,9 +111,12 @@ class SimulationScreen(MDScreen):
         self.export_checkbox.bind(active=lambda *_a: self._recalculate())
         checkbox_cell.add_widget(self.export_checkbox)
         export_row.add_widget(checkbox_cell)
-        export_row.add_widget(MDLabel(
+        export_label = MDLabel(
             text="Enable Net Metering / Grid Export", theme_text_color="Custom", text_color=TEXT_DARK,
-        ))
+        )
+        export_label.bind(width=lambda label, width: setattr(label, "text_size", (width, None)),
+                          texture_size=lambda _label, size: setattr(export_row, "height", max(dp(40), size[1] + dp(8))))
+        export_row.add_widget(export_label)
         form.add_widget(export_row)
         self.assumption_label = MDLabel(
             text="Solar and charging are DC kWh; load, imports and exports are AC kWh. Battery is stored kWh.",
@@ -130,7 +134,10 @@ class SimulationScreen(MDScreen):
         form.add_widget(self.chart)
 
         form.add_widget(section_label("gauge", "Summary"))
-        summary = MDBoxLayout(spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None, height=dp(56))
+        summary = GridLayout(
+            cols=2, spacing=dp(4), padding=(dp(4), dp(2)), size_hint_y=None,
+            height=dp(120), row_default_height=dp(56), row_force_default=True,
+        )
         self.harvest_label = self._make_stat(summary, "Harvest")
         self.consumption_label = self._make_stat(summary, "Load")
         self.grid_label = self._make_stat(summary, "Grid")
@@ -153,14 +160,22 @@ class SimulationScreen(MDScreen):
     def _tinted_field(self, **kwargs) -> MDTextField:
         kwargs.setdefault("mode", "fill")
         kwargs.setdefault("fill_color_normal", rect_tint(self.active_scenario))
-        kwargs.setdefault("fill_color_focus", WHITE)
+        kwargs.setdefault("fill_color_focus", rect_tint(self.active_scenario))
+        ink = WHITE if self.active_scenario == "Rainy" else TEXT_DARK
+        kwargs.setdefault("text_color_normal", ink)
+        kwargs.setdefault("text_color_focus", ink)
+        kwargs.setdefault("hint_text_color_normal", ink)
+        kwargs.setdefault("hint_text_color_focus", ink)
         field = MDTextField(**kwargs)
         self._retintable_fields.append(field)
         return field
 
     def _make_stat(self, row: MDBoxLayout, title: str) -> MDLabel:
         box = MDBoxLayout(orientation="vertical")
-        box.add_widget(stat_title_label(title))
+        title_label = stat_title_label(title)
+        box.add_widget(title_label)
+        if title == "Grid":
+            self.grid_title_label = title_label
         value_label = with_bg(
             MDLabel(text="--", bold=True, halign="center", theme_text_color="Custom", text_color=TEXT_DARK),
             bg=rect_tint(self.active_scenario),
@@ -198,8 +213,16 @@ class SimulationScreen(MDScreen):
     def _retheme(self) -> None:
         tint = rect_tint(self.active_scenario)
         self.big_bg.set_scenario(self.active_scenario)
+        ink = WHITE if self.active_scenario == "Rainy" else TEXT_DARK
         for field in self._retintable_fields:
+            Animation.cancel_all(field, "_fill_color")
             field.fill_color_normal = tint
+            field.fill_color_focus = tint
+            field._fill_color = tint
+            field.text_color_normal = ink
+            field.text_color_focus = ink
+            field.hint_text_color_normal = ink
+            field.hint_text_color_focus = ink
         for label in self._retintable_labels:
             label.bg_color.rgba = tint
 
@@ -276,7 +299,7 @@ class SimulationScreen(MDScreen):
             return
 
         row_h = dp(30)
-        headers = ["Hour", "Consum.", "Solar", "Grid", "Battery kWh"]
+        headers = ["Hour", "Consum.", "Solar", "Grid", "Battery"]
         grid = GridLayout(cols=len(headers), size_hint_y=None, spacing=dp(1), padding=dp(1),
                            row_default_height=row_h, row_force_default=True)
         for h in headers:
@@ -333,7 +356,8 @@ class SimulationScreen(MDScreen):
 
         self.harvest_label.text = f"{result.total_solar_kwh:.2f} kWh"
         self.consumption_label.text = f"{result.total_consumption_kwh:.2f} kWh"
-        self.grid_label.text = f"{net_grid:+.2f} kWh ({grid_word})"
+        self.grid_title_label.text = f"Grid {grid_word}"
+        self.grid_label.text = f"{abs(net_grid):.2f} kWh"
         self.battery_label.text = f"{end_battery_kwh:.2f} kWh"
 
         series, x_labels, hours = self._series_for_result(result)

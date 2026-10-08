@@ -40,7 +40,7 @@ from logic.financial import (
 )
 from logic.quote_validation import live_float_or, validate_weather_mix, validate_roi_assumptions
 from ui_style import (
-    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, go_home, header_actions, icon_button, m3_field, picker_field,
+    ACCENT, BAD_RED, HEADER_BG, OK_GREEN, TEXT_DARK, about_button, framed_label, go_home, header_actions, icon_button, labeled_field_row, labeled_m3_field, picker_field,
     keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label, stat_title_label, tonal_button, with_bg,
 )
 from widgets.legend_swatch import LegendSwatch
@@ -54,6 +54,7 @@ DEFAULT_EXPORT_RATE = 6.0
 DEFAULT_SIMULATION_YEARS = 25
 SENSITIVITY_MODEL = "One assumption changes at a time; equipment and lifetime inputs stay fixed. Yield cases scale first-year energy displacement/export and cap savings at consumption; this approximates solar-resource uncertainty."
 MAINTENANCE_METHODS = ["Percentage of System Cost", "Fixed Annual Amount"]
+MAINTENANCE_METHOD_VALUES = {"percentage": "Percent", "fixed": "Fixed Amount"}
 
 
 class RoiScreen(MDScreen):
@@ -109,84 +110,98 @@ class RoiScreen(MDScreen):
         form.add_widget(summary_card)
 
         assumptions_card = section_card("cash-multiple", "Financial Assumptions")
-        row1 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
-        self.inflation_field = m3_field("Price Inflation %", icon="percent", input_filter="float",
-                                         text=f"{DEFAULT_INFLATION_PCT:.1f}")
-        self.export_rate_field = m3_field("Export Rate (PHP/kWh)", icon="transmission-tower-export",
-                                           input_filter="float", text=f"{DEFAULT_EXPORT_RATE:.2f}")
+        self.inflation_field, inflation_view = labeled_m3_field(
+            "Price Inflation %", icon="percent", input_filter="float", text=f"{DEFAULT_INFLATION_PCT:.1f}",
+        )
+        self.export_rate_field, export_rate_view = labeled_m3_field(
+            "Export Rate (PHP/kWh)", icon="transmission-tower-export",
+            input_filter="float", text=f"{DEFAULT_EXPORT_RATE:.2f}",
+        )
         for f in (self.inflation_field, self.export_rate_field):
             f.bind(text=lambda *_a: self._recalculate())
-            row1.add_widget(f)
-        assumptions_card.add_widget(row1)
+        assumptions_card.add_widget(labeled_field_row(inflation_view, export_rate_view))
 
         self.maintenance_method_field = picker_field(
-            "cog-outline", "Maintenance Method", MAINTENANCE_METHODS[0], self._open_method_menu,
+            "cog-outline", "Maintenance Method", MAINTENANCE_METHOD_VALUES["percentage"], self._open_method_menu,
         )
         assumptions_card.add_widget(self.maintenance_method_field)
 
-        row2 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
-        self.maintenance_pct_field = m3_field("Maintenance %", icon="percent", input_filter="float",
-                                               text=f"{DEFAULT_MAINTENANCE_PCT:.2f}")
-        self.maintenance_fixed_field = m3_field("Maintenance Fixed (PHP)", icon="cash", input_filter="float",
-                                                  text=f"{DEFAULT_MAINTENANCE_FIXED:.2f}")
+        self.maintenance_pct_field, maintenance_pct_view = labeled_m3_field(
+            "Maintenance %", icon="percent", input_filter="float", text=f"{DEFAULT_MAINTENANCE_PCT:.2f}",
+        )
+        self.maintenance_fixed_field, maintenance_fixed_view = labeled_m3_field(
+            "Maintenance Fixed (PHP)", icon="cash", input_filter="float", text=f"{DEFAULT_MAINTENANCE_FIXED:.2f}",
+        )
         for f in (self.maintenance_pct_field, self.maintenance_fixed_field):
             f.bind(text=lambda *_a: self._recalculate())
-            row2.add_widget(f)
-        assumptions_card.add_widget(row2)
+        assumptions_card.add_widget(labeled_field_row(maintenance_pct_view, maintenance_fixed_view))
 
-        row3 = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
-        self.maintenance_inflation_field = m3_field("Maintenance Inflation %", icon="percent",
-                                                      input_filter="float", text="0.0")
-        self.years_field = m3_field("Simulation Years", icon="calendar-range", input_filter="int",
-                                     text=str(DEFAULT_SIMULATION_YEARS))
+        self.maintenance_inflation_field, maintenance_inflation_view = labeled_m3_field(
+            "Maintenance Inflation %", icon="percent", input_filter="float", text="0.0",
+        )
+        self.years_field, years_view = labeled_m3_field(
+            "Simulation Years", icon="calendar-range", input_filter="int", text=str(DEFAULT_SIMULATION_YEARS),
+        )
         for f in (self.maintenance_inflation_field, self.years_field):
             f.bind(text=lambda *_a: self._recalculate())
-            row3.add_widget(f)
-        assumptions_card.add_widget(row3)
+        assumptions_card.add_widget(labeled_field_row(maintenance_inflation_view, years_view))
 
-        self.system_cost_field = m3_field("Total Installed Solar System Cost (PHP)", icon="wallet-outline",
-                                           input_filter="float", text="0")
+        self.system_cost_field, system_cost_view = labeled_m3_field(
+            "Installed System Cost (PHP)", icon="wallet-outline", input_filter="float", text="0",
+        )
         self.system_cost_field.bind(text=lambda *_a: self._recalculate())
-        assumptions_card.add_widget(self.system_cost_field)
+        assumptions_card.add_widget(system_cost_view)
         form.add_widget(assumptions_card)
 
         lifecycle_card = section_card("calendar-clock", "Lifetime and Replacement Assumptions")
         for name, hint, default, integer in (
             ("pv_degradation_pct", "Annual panel degradation %", "0.5", False),
-            ("battery_degradation_pct", "Annual battery capacity fade %", "2.0", False),
+            ("battery_degradation_pct", "Battery Capacity Fade %", "2.0", False),
             ("discount_rate_pct", "Discount rate %", "6.0", False),
-            ("battery_replacement_years", "Replace battery after years (0 = none)", "10", True),
-            ("battery_replacement_cost", "Battery replacement quote (PHP)", "0", False),
-            ("inverter_replacement_years", "Replace inverter after years (0 = none)", "12", True),
-            ("inverter_replacement_cost", "Inverter replacement quote (PHP)", "0", False),
+            ("battery_replacement_years", "Battery Replace Year", "10", True),
+            ("battery_replacement_cost", "Battery Replacement Cost (PHP)", "0", False),
+            ("inverter_replacement_years", "Inverter Replace Year", "12", True),
+            ("inverter_replacement_cost", "Inverter Replacement Cost (PHP)", "0", False),
         ):
-            field = m3_field(hint, input_filter="int" if integer else "float", text=default)
+            field, field_view = labeled_m3_field(
+                hint, input_filter="int" if integer else "float", text=default,
+            )
             field.bind(text=lambda *_a: self._recalculate())
             self._assumption_fields[name] = field
-            lifecycle_card.add_widget(field)
-        lifecycle_card.add_widget(MDLabel(
-            text="Defaults are planning assumptions. Enter replacement quotes; zero cost excludes that replacement expense. Capacity fade uses the first-year energy balance.",
+            lifecycle_card.add_widget(field_view)
+        lifecycle_note = MDLabel(
+            text="Defaults are planning assumptions. Set a replacement year to 0 for none. Enter replacement quotes; zero cost excludes that replacement expense. Capacity fade uses the first-year energy balance.",
             font_style="Caption", size_hint_y=None, height=dp(64), theme_text_color="Custom", text_color=TEXT_DARK,
-        ))
+        )
+        lifecycle_note.bind(width=lambda label, width: setattr(label, "text_size", (width, None)),
+                            texture_size=lambda label, size: setattr(label, "height", size[1] + dp(8)))
+        lifecycle_card.add_widget(lifecycle_note)
         form.add_widget(lifecycle_card)
 
         mix_card = section_card("weather-partly-cloudy", "Annual Weather Mix")
-        mix_card.add_widget(MDLabel(
+        mix_note = MDLabel(
             text="Share of the year in each weather scenario (from Simulation).",
             font_style="Caption", theme_text_color="Custom", text_color=TEXT_DARK,
             size_hint_y=None, height=dp(20),
-        ))
-        mix_row = MDBoxLayout(spacing=dp(6), size_hint_y=None, height=dp(52))
+        )
+        mix_note.bind(width=lambda label, width: setattr(label, "text_size", (width, None)),
+                      texture_size=lambda label, size: setattr(label, "height", size[1] + dp(4)))
+        mix_card.add_widget(mix_note)
+        mix_views = []
         for name in ("Sunny", "Cloudy", "Rainy"):
-            field = m3_field(f"{name} %", input_filter="float", text=f"{DEFAULT_WEATHER_MIX[name]:.1f}")
+            field, field_view = labeled_m3_field(
+                f"{name} %", input_filter="float", text=f"{DEFAULT_WEATHER_MIX[name]:.1f}",
+            )
             field.bind(text=lambda *_a: self._recalculate())
             self._mix_fields[name] = field
-            mix_row.add_widget(field)
-        mix_card.add_widget(mix_row)
+            mix_views.append(field_view)
+        mix_card.add_widget(labeled_field_row(*mix_views))
         self.mix_total_label = MDLabel(
             text="Total: 100.0% (must equal 100%)", size_hint_y=None, height=dp(20),
             theme_text_color="Custom", text_color=TEXT_DARK,
         )
+        self.mix_total_label.bind(width=lambda label, width: setattr(label, "text_size", (width, None)),
+                                  texture_size=lambda label, size: setattr(label, "height", size[1] + dp(4)))
         mix_card.add_widget(self.mix_total_label)
         form.add_widget(mix_card)
 
@@ -242,7 +257,7 @@ class RoiScreen(MDScreen):
     def _build_legend(self) -> MDBoxLayout:
         row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(24))
         for label, color, dashed in [
-            ("Cumulative Cash Flow", CASH_FLOW_COLOR, False),
+            ("Cash Flow", CASH_FLOW_COLOR, False),
             ("Payback", PAYBACK_COLOR, True),
         ]:
             entry = MDBoxLayout(spacing=dp(4), size_hint_x=None, width=dp(150))
@@ -259,7 +274,7 @@ class RoiScreen(MDScreen):
 
     def _select_method(self, method_label: str) -> None:
         self.maintenance_method = "percentage" if method_label == MAINTENANCE_METHODS[0] else "fixed"
-        self.maintenance_method_field.set_value(method_label)
+        self.maintenance_method_field.set_value(MAINTENANCE_METHOD_VALUES[self.maintenance_method])
         if self._method_menu:
             self._method_menu.dismiss()
         self._recalculate()
@@ -502,8 +517,9 @@ class RoiScreen(MDScreen):
         self.inflation_field.text = f"{data.get('inflation_pct', DEFAULT_INFLATION_PCT):.1f}"
         self.export_rate_field.text = f"{data.get('export_rate', DEFAULT_EXPORT_RATE):.2f}"
         self.maintenance_method = data.get("maintenance_method", "percentage")
-        label = MAINTENANCE_METHODS[0] if self.maintenance_method == "percentage" else MAINTENANCE_METHODS[1]
-        self.maintenance_method_field.set_value(label)
+        self.maintenance_method_field.set_value(
+            MAINTENANCE_METHOD_VALUES.get(self.maintenance_method, MAINTENANCE_METHOD_VALUES["fixed"]),
+        )
         self.maintenance_pct_field.text = f"{data.get('maintenance_pct', DEFAULT_MAINTENANCE_PCT):.2f}"
         self.maintenance_fixed_field.text = f"{data.get('maintenance_fixed', DEFAULT_MAINTENANCE_FIXED):.2f}"
         self.maintenance_inflation_field.text = f"{data.get('maintenance_inflation_pct', 0.0):.2f}"

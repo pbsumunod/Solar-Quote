@@ -138,19 +138,25 @@ class ClientScreen(MDScreen):
         # are PHP-denominated with no per-country switching), so letting users
         # pick a different country here would be misleading rather than useful.
         self.country_field = m3_field("Country", icon="earth", text="Philippines", disabled=True)
-        client_card.add_widget(self.country_field)
-        client_card.add_widget(MDLabel(
+        country_group = MDBoxLayout(orientation="vertical", spacing=dp(6), size_hint_y=None)
+        country_group.bind(minimum_height=country_group.setter("height"))
+        country_group.add_widget(self.country_field)
+        country_note = MDLabel(
             text="SolarQuote is currently available for the Philippines only.",
             font_style="Caption", theme_text_color="Custom", text_color=ON_SURFACE_VARIANT,
             size_hint_y=None, height=dp(16),
-        ))
+        )
+        country_note.bind(width=lambda label, width: setattr(label, "text_size", (width, None)),
+                          texture_size=lambda label, size: setattr(label, "height", size[1]))
+        country_group.add_widget(country_note)
 
         contact_date_row = MDBoxLayout(spacing=dp(10), size_hint_y=None, height=dp(52))
         self.contact_number_field = m3_field("Contact No.", icon="phone")
         self.date_field = m3_field("Date", icon="calendar", text=project_today())
         contact_date_row.add_widget(self.contact_number_field)
         contact_date_row.add_widget(self.date_field)
-        client_card.add_widget(contact_date_row)
+        country_group.add_widget(contact_date_row)
+        client_card.add_widget(country_group)
 
         self.email_field = m3_field("Email", icon="email")
         client_card.add_widget(self.email_field)
@@ -171,34 +177,19 @@ class ClientScreen(MDScreen):
         electricity_card.add_widget(self.ratio_field)
         form.add_widget(electricity_card)
 
-        design_card = section_card("flash-outline", "Automatic Design")
+        # Advanced design and site resource inputs are deliberately omitted
+        # from this first step to keep client intake short. Preserve the
+        # existing project model defaults and persistence compatibility.
         self.peak_load_field = m3_field("Measured simultaneous demand (kW, optional)", input_filter="float")
         self.surge_load_field = m3_field("Appliance startup demand (kW, optional)", input_filter="float")
-        design_card.add_widget(self.peak_load_field)
-        design_card.add_widget(self.surge_load_field)
-        storage_row = MDBoxLayout(size_hint_y=None, height=dp(48))
-        self.storage_checkbox = MDCheckbox(active=True, size_hint_x=None, width=dp(48))
-        storage_row.add_widget(self.storage_checkbox)
-        storage_row.add_widget(MDLabel(text="Include automatic battery storage"))
-        design_card.add_widget(storage_row)
-        design_card.add_widget(MDLabel(text="Leave demand blank for an estimated selection. Inverter, battery modules and voltage are selected automatically.",
-                                       font_style="Caption", size_hint_y=None, height=dp(48)))
-        form.add_widget(design_card)
-
-        site_card = section_card("map-marker", "Optional Solar Resource")
+        self.storage_checkbox = MDCheckbox(active=True)
         self.latitude_field = m3_field("Site latitude (-90 to 90)")
         self.longitude_field = m3_field("Site longitude (-180 to 180)")
         self.tilt_field = m3_field("Roof tilt (degrees)", text="10", input_filter="float")
         self.azimuth_field = m3_field("Roof azimuth (degrees, north = 0)", text="180", input_filter="float")
         self.shading_field = m3_field("Estimated shading loss %", text="0", input_filter="float")
-        for field in (self.latitude_field, self.longitude_field, self.tilt_field, self.azimuth_field, self.shading_field):
-            site_card.add_widget(field)
-        from ui_style import tonal_button
-        site_card.add_widget(tonal_button("Load site solar resource", on_release=self._load_site_resource))
         self.resource_label = MDLabel(text="Offline estimate until a measured or site resource is supplied. Loading sends coordinates only to NASA POWER; no client/contact data.",
                                       font_style="Caption", size_hint_y=None, height=dp(64))
-        site_card.add_widget(self.resource_label)
-        form.add_widget(site_card)
 
         form.add_widget(bottom_primary_action("Next: Consumption", self._go_next))
 

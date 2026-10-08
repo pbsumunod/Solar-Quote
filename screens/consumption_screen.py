@@ -33,7 +33,7 @@ from logic.equipment import refresh_equipment_design
 from logic.quote_validation import live_float_or, validate_hourly_profile
 from ui_style import (
     ACCENT, ACCENT_LIGHT, HEADER_BG, NEAR_WHITE, ON_SURFACE_VARIANT, ROW_LINE, TEXT_DARK, WHITE,
-    about_button, framed_label, go_home, header_actions, icon_button, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
+    about_button, framed_label, header_actions, keep_focused_field_visible, nav_row, save_button, save_current_project, screen_header, section_card, section_label,
     stat_title_label, tonal_button,
 )
 from widgets.bar_chart import BarChart
@@ -110,7 +110,7 @@ class ConsumptionScreen(MDScreen):
         root = MDBoxLayout(orientation="vertical")
         root.add_widget(screen_header(
             "Consumption", step=2, on_back=self._go_back,
-            right_widget=header_actions(about_button(self._go_about), icon_button("home-outline", on_release=go_home, color=ACCENT), save_button(on_release=save_current_project)),
+            right_widget=header_actions(about_button(self._go_about), save_button(on_release=save_current_project)),
         ))
 
         scroll = ScrollView()
@@ -118,7 +118,10 @@ class ConsumptionScreen(MDScreen):
         form.bind(minimum_height=form.setter("height"))
 
         summary_card = section_card("chart-bell-curve-cumulative", "Daily Consumption Summary")
-        summary = MDBoxLayout(spacing=dp(4), size_hint_y=None, height=dp(56))
+        summary = GridLayout(
+            cols=2, spacing=dp(4), size_hint_y=None, height=dp(116),
+            row_default_height=dp(56), row_force_default=True,
+        )
         self.total_label = self._make_stat(summary, "Total Daily")
         self.day_label = self._make_stat(summary, "Daytime")
         self.night_label = self._make_stat(summary, "Nighttime")
@@ -127,11 +130,15 @@ class ConsumptionScreen(MDScreen):
         form.add_widget(summary_card)
 
         form.add_widget(section_label("table", "Hourly Load Profile"))
-        header_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(40))
+        header_row = MDBoxLayout(spacing=dp(8), size_hint_y=None, height=dp(48))
         self.total_pct_label = MDLabel(
             text="Total: 100.00% (must equal 100%)", theme_text_color="Custom", text_color=TEXT_DARK,
         )
         header_row.add_widget(self.total_pct_label)
+        self.total_pct_label.bind(
+            width=lambda label, width: setattr(label, "text_size", (width, None)),
+            texture_size=lambda _label, size: setattr(header_row, "height", max(dp(48), size[1] + dp(8))),
+        )
         reset_btn = tonal_button("RESET", on_release=self._reset_to_default, size_hint_x=None, width=dp(90))
         header_row.add_widget(reset_btn)
         form.add_widget(header_row)
