@@ -127,7 +127,7 @@ class SimulationScreen(MDScreen):
                                    texture_size=lambda inst, value: setattr(inst, "height", value[1] + dp(8)))
         form.add_widget(self.assumption_label)
 
-        form.add_widget(section_label("chart-line", "Simulation (6 AM - 6 AM)"))
+        form.add_widget(section_label("chart-line", "Simulation (6 AM - 5 AM)"))
         form.add_widget(self._build_legend())
 
         self.chart = LineChart(size_hint_y=None, height=dp(280))

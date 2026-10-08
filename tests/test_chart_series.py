@@ -23,22 +23,22 @@ def _full_day_result(battery_total_kwh=10.0):
 
 
 class TestSeriesForResult:
-    def test_x_labels_wrap_around_to_6am(self):
+    def test_x_labels_cover_only_simulated_hours(self):
         result = _full_day_result()
         _, x_labels, _ = series_for_result(result, 10.0)
-        assert x_labels == HOUR_LABELS + ["6 AM"]
+        assert x_labels == HOUR_LABELS
 
     def test_returns_four_series(self):
         result = _full_day_result()
         series, _, _ = series_for_result(result, 10.0)
         assert len(series) == 4
 
-    def test_each_series_matches_wrapped_hour_count(self):
+    def test_each_series_matches_simulated_hour_count(self):
         result = _full_day_result()
         series, _, hours = series_for_result(result, 10.0)
-        assert len(hours) == 25
+        assert len(hours) == 24
         for values, *_rest in series:
-            assert len(values) == 25
+            assert len(values) == 24
 
     def test_consumption_series_matches_hourly_consumption(self):
         result = _full_day_result()
@@ -61,11 +61,8 @@ class TestSeriesForResult:
         expected = [h.soc_end_pct / 100 * battery_total_kwh for h in hours]
         assert battery_series == pytest.approx(expected)
 
-    def test_wrap_hour_mirrors_first_hour_start_of_day(self):
+    def test_last_point_is_last_simulated_hour(self):
         result = _full_day_result()
         _, _, hours = series_for_result(result, 10.0)
-        first, wrap = hours[0], hours[-1]
-        assert wrap.hour_label == "6 AM"
-        assert wrap.consumption_kwh == pytest.approx(first.consumption_kwh)
-        assert wrap.soc_start_kwh == pytest.approx(first.soc_start_kwh)
-        assert wrap.soc_end_kwh == pytest.approx(first.soc_start_kwh)
+        assert hours[-1] is result.hours[-1]
+        assert hours[-1].hour_label == HOUR_LABELS[-1]

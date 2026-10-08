@@ -90,10 +90,14 @@ class LineChart(Widget):
             return
 
         scale = self.text_scale
-        x0 = self.x + self.LEFT_MARGIN * scale
-        x1 = self.x + self.width - self.RIGHT_MARGIN * scale
+        # PHP cash-flow ticks can be seven digits wide (plus separators).
+        # Reserve enough space on both sides when exporting the chart.
+        axis_margin = dp(62) if self._y_unit == "PHP" else None
+        x0 = self.x + (axis_margin or self.LEFT_MARGIN) * scale
+        x1 = self.x + self.width - (axis_margin or self.RIGHT_MARGIN) * scale
         y0 = self.y + (dp(42) if self._x_unit else self.BOTTOM_MARGIN) * scale
-        y1 = self.y + self.height - (dp(50) if self._legend else self.TOP_MARGIN) * scale
+        legend_rows = 2 if len(self._legend) > 2 else 1
+        y1 = self.y + self.height - ((dp(35) + dp(25) * legend_rows) if self._legend else self.TOP_MARGIN) * scale
         plot_w = max(1.0, x1 - x0)
         plot_h = max(1.0, y1 - y0)
         n = len(self._x_labels)
@@ -208,13 +212,17 @@ class LineChart(Widget):
             self._tick_labels.append(lbl)
 
         if self._legend:
-            width = max(1, (x1 - x0) / len(self._legend))
+            columns = min(2, len(self._legend))
+            width = max(1, (x1 - x0) / columns)
             for index, label in enumerate(self._legend):
                 color = self._series[index][1] if index < len(self._series) else AXIS_COLOR
                 text = ("-- " if index < len(self._series) and self._series[index][2] else "- ") + label
                 lbl = Label(text=text, font_size=dp(10) * scale, color=color,
                             size_hint=(None, None), size=(width, dp(26) * scale),
-                            pos=(x0 + index * width, self.top - dp(28) * scale))
+                            text_size=(width - dp(8) * scale, dp(26) * scale),
+                            halign="left", valign="middle",
+                            pos=(x0 + index % columns * width,
+                                 self.top - dp(28 + 25 * (index // columns)) * scale))
                 self.add_widget(lbl)
                 self._tick_labels.append(lbl)
         for text, pos, size in ((self._x_unit, ((x0 + x1) / 2 - dp(40) * scale, self.y), (dp(80) * scale, dp(18) * scale)),
@@ -268,10 +276,11 @@ class LineChart(Widget):
         is vertically centered on it."""
         lbl = Label(
             text=text, font_size=dp(9) * self.text_scale, color=(0.3, 0.3, 0.3, 1),
-            size_hint=(None, None), size=(dp(32) * self.text_scale, dp(14) * self.text_scale),
+            size_hint=(None, None), size=(dp(58 if self._y_unit == "PHP" else 32) * self.text_scale,
+                                         dp(14) * self.text_scale),
             halign="right" if side == "left" else "left",
         )
-        x_offset = (-dp(34) if side == "left" else dp(2)) * self.text_scale
+        x_offset = (-dp(60 if self._y_unit == "PHP" else 34) if side == "left" else dp(2)) * self.text_scale
         lbl.pos = (x + x_offset, y - dp(7) * self.text_scale)
         self.add_widget(lbl)
         self._tick_labels.append(lbl)

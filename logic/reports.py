@@ -108,10 +108,12 @@ def report_sections(data):
     for name in SCENARIO_ORDER:
         result = data["simulation"]["scenario_results"].get(name)
         if result is not None:
-            scenarios.extend([(f"{name} / Solar (kWh/day)", result.total_solar_kwh),
+            scenarios.extend([(f"{name} / AC load (kWh/day)", result.total_consumption_kwh),
+                              (f"{name} / DC solar harvest (kWh/day)", result.total_solar_kwh),
                               (f"{name} / Grid purchase (kWh/day)", result.total_grid_purchase_kwh),
                               (f"{name} / Grid export (kWh/day)", result.total_grid_export_kwh),
-                              (f"{name} / Curtailed (kWh/day)", result.total_curtailed_kwh)])
+                              (f"{name} / Curtailed solar (kWh/day)", result.total_curtailed_kwh),
+                              (f"{name} / Conversion loss (kWh/day)", result.total_conversion_loss_kwh)])
     sections = [
         ("Proposal identification", proposal_metadata(data)),
         ("Client profile", list(_flatten(client))),
@@ -158,13 +160,15 @@ def generate_excel(path, data):
     for label, value in zip(HOUR_LABELS, data["consumption"].get("hourly_kwh", [])):
         sheet.append([label, value])
     sheet = wb.create_sheet("Weather scenarios")
-    sheet.append(["Scenario", "Solar (kWh)", "Grid purchase (kWh)", "Grid export (kWh)", "Curtailed (kWh)"])
+    sheet.append(["Scenario", "AC load (kWh/day)", "DC solar (kWh/day)", "Grid purchase (kWh/day)",
+                  "Grid export (kWh/day)", "Curtailed solar (kWh/day)", "Conversion loss (kWh/day)"])
     for name in SCENARIO_ORDER:
         result = data["simulation"]["scenario_results"].get(name)
         if result is None:
             continue
-        sheet.append([name, result.total_solar_kwh, result.total_grid_purchase_kwh,
-                      result.total_grid_export_kwh, result.total_curtailed_kwh])
+        sheet.append([name, result.total_consumption_kwh, result.total_solar_kwh,
+                      result.total_grid_purchase_kwh, result.total_grid_export_kwh,
+                      result.total_curtailed_kwh, result.total_conversion_loss_kwh])
         hourly = wb.create_sheet(f"Hourly simulation {name}")
         fields = ["consumption_kwh", "solar_kwh", "solar_to_load_kwh", "battery_charge_kwh", "battery_discharge_kwh",
                   "grid_purchase_kwh", "grid_export_kwh", "curtailed_kwh", "soc_end_kwh", "soc_end_pct"]
@@ -279,7 +283,7 @@ def generate_pdf(path, data, roi_chart_image=None, scenario_images=None, waterma
             pdf.image(image, w=pdf.epw)
             pdf.ln(4)
             pdf.set_font("SolarQuote", "", 9)
-            pdf.multi_cell(pdf.epw, 5, "Hourly energy (kWh): red consumption; yellow solar; blue grid (+ export, - purchase). Dashed green: stored battery energy (kWh). DOD floor: minimum stored energy.", new_x="LMARGIN", new_y="NEXT")
+            pdf.multi_cell(pdf.epw, 5, "Hourly energy (kWh), 6 AM to 5 AM: red AC load; yellow DC solar harvest; blue AC grid (+ export, - import); dashed green stored battery energy. DOD floor marks minimum stored energy.", new_x="LMARGIN", new_y="NEXT")
     if roi_chart_image:
         pdf.add_page()
         _pdf_heading(pdf, "Cumulative cash flow (PHP); horizontal axis: years")
@@ -351,7 +355,7 @@ def generate_pptx(path, data, chart_images=None, roi_chart_image=None):
         if image:
             page = slide(f"{name} day simulation")
             page.shapes.add_picture(str(image), Inches(0.6), Inches(1.15), width=Inches(12.1))
-            _ppt_text(page, 0.6, 6.5, 12.1, 0.5, "Red: consumption | Yellow: solar | Blue: grid (+ export, - purchase) | Dashed green: stored battery. Units: kWh.", 12)
+            _ppt_text(page, 0.6, 6.5, 12.1, 0.5, "6 AM to 5 AM | Red: AC load | Yellow: DC solar | Blue: AC grid (+ export, - import) | Green: stored battery. kWh.", 12)
     from pptx.util import Pt
     # Split the wide annual projection into related groups with a year in each.
     for columns in (PROJECTION_COLUMNS[:6], [PROJECTION_COLUMNS[0]] + PROJECTION_COLUMNS[6:9],

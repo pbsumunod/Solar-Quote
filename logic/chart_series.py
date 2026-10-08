@@ -4,7 +4,6 @@ so the two always draw the exact same lines from the exact same data.
 """
 
 from logic.calculations import HOUR_LABELS
-from logic.simulation import HourResult
 
 SERIES_COLORS = {
     "Consumption": (0.80, 0.15, 0.15, 1),
@@ -39,18 +38,9 @@ def roi_chart_series(
 
 def series_for_result(result, battery_total_kwh: float) -> tuple[list[tuple], list[str], list]:
     hours = list(result.hours)
-    first = hours[0]
-    wrap_soc_kwh = first.soc_start_kwh
-    wrap_soc_pct = (wrap_soc_kwh / battery_total_kwh * 100) if battery_total_kwh else 0.0
-    wrap_hour = HourResult(
-        hour_label="6 AM", consumption_kwh=first.consumption_kwh, solar_kwh=first.solar_kwh,
-        solar_to_load_kwh=first.solar_to_load_kwh, battery_charge_kwh=first.battery_charge_kwh,
-        battery_discharge_kwh=first.battery_discharge_kwh, grid_purchase_kwh=first.grid_purchase_kwh,
-        grid_export_kwh=first.grid_export_kwh, curtailed_kwh=first.curtailed_kwh,
-        soc_start_kwh=wrap_soc_kwh, soc_end_kwh=wrap_soc_kwh, soc_end_pct=wrap_soc_pct,
-    )
-    hours = hours + [wrap_hour]
-    x_labels = HOUR_LABELS + ["6 AM"]
+    # Each sample is an actual simulated hour. Repeating the first hour at the
+    # right edge invented a second 6 AM reading and a false battery jump.
+    x_labels = HOUR_LABELS[:len(hours)]
 
     # Grid: positive = selling/exporting, negative = buying -- per the requested convention.
     # Battery: actual kWh held in the battery each hour (SOC% * total capacity), not

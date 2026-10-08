@@ -316,7 +316,11 @@ class ReportScreen(MDScreen):
     def _chart_jobs(self, data, tmp_dir):
         roi = data["roi"]
         series, labels, vline = roi_chart_series(roi["system_cost"], roi["projection_rows"], roi["payback_years"])
-        chart = LineChart(size_hint=(None, None), size=(1600, 700), text_scale=2.4)
+        # Export dimensions are pixels, while LineChart margins/fonts use dp.
+        # Normalize the scale so a high-density Android screen cannot consume
+        # the entire 700 px chart height with dp-scaled margins.
+        export_text_scale = 2.4 / dp(1)
+        chart = LineChart(size_hint=(None, None), size=(1600, 700), text_scale=export_text_scale)
         chart.set_data(series, labels, vline=vline, fill_index=0,
                        legend=["Cumulative cash flow"], x_unit="Years", y_unit="PHP")
         jobs = [("ROI", chart, os.path.join(tmp_dir, "roi.png"), "roi")]
@@ -327,9 +331,9 @@ class ReportScreen(MDScreen):
             if result is None:
                 continue
             series, labels, _hours = series_for_result(result, capacity)
-            chart = LineChart(size_hint=(None, None), size=(1600, 700), text_scale=2.4)
+            chart = LineChart(size_hint=(None, None), size=(1600, 700), text_scale=export_text_scale)
             chart.set_data(series, labels, hline={"y": floor, "label": "DOD floor", "color": DOD_FLOOR_COLOR},
-                           legend=["Consumption", "Solar", "Grid (+ export / - purchase)", "Stored battery"],
+                           legend=["Load (AC)", "Solar harvest (DC)", "Grid: +export / -import (AC)", "Battery stored (DC)"],
                            x_unit="Hour", y_unit="kWh")
             jobs.append((name, chart, os.path.join(tmp_dir, name.lower() + ".png"), name))
         return jobs
