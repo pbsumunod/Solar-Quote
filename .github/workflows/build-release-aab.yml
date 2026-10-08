@@ -139,23 +139,6 @@ jobs:
           test -x "$ZIPALIGN" || { echo "::error::zipalign not found in installed Android build tools"; exit 1; }
           "$ZIPALIGN" -c -P 16 -v 4 "$RUNNER_TEMP/check.apk"
 
-      - name: Collect matching unstripped native symbols
-        run: |
-          AAB_FILE=$(find bin -name "*.aab" | head -n1)
-          READELF=$(find "$HOME/.buildozer" -path '*llvm/prebuilt/linux-x86_64/bin/llvm-readelf' -print -quit)
-          test -n "$READELF"
-          python scripts/create_native_symbols.py "$AAB_FILE" .buildozer "$RUNNER_TEMP/native-debug-symbols" --readelf "$READELF"
-
-      - name: Upload native debug symbols
-        uses: actions/upload-artifact@v4
-        with:
-          name: solarquote-native-debug-symbols
-          # GitHub packages this directory as a ZIP whose top-level entry is
-          # arm64-v8a/, which is the layout Play Console expects directly.
-          path: ${{ runner.temp }}/native-debug-symbols
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Upload AAB
         uses: actions/upload-artifact@v4
         with:
@@ -171,4 +154,27 @@ jobs:
           # A release AAB is kept longer than the debug APK -- it is what gets
           # uploaded to Play Console, so it is worth being able to re-fetch a
           # recent one without rebuilding.
+          retention-days: 14
+
+      # Native symbols are useful for crash reports, but p4a may strip an SDL
+      # library before Gradle sees it. A missing unstripped match must not
+      # prevent delivery of an otherwise verified, signed release bundle.
+      - name: Collect matching unstripped native symbols
+        id: symbols
+        continue-on-error: true
+        run: |
+          AAB_FILE=$(find bin -name "*.aab" | head -n1)
+          READELF=$(find "$HOME/.buildozer" -path '*llvm/prebuilt/linux-x86_64/bin/llvm-readelf' -print -quit)
+          test -n "$READELF"
+          python scripts/create_native_symbols.py "$AAB_FILE" .buildozer "$RUNNER_TEMP/native-debug-symbols" --readelf "$READELF"
+
+      - name: Upload native debug symbols
+        if: steps.symbols.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: solarquote-native-debug-symbols
+          # GitHub packages this directory as a ZIP whose top-level entry is
+          # arm64-v8a/, which is the layout Play Console expects directly.
+          path: ${{ runner.temp }}/native-debug-symbols
+          if-no-files-found: error
           retention-days: 14
