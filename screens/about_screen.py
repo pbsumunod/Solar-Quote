@@ -26,7 +26,7 @@ from kivymd.uix.screen import MDScreen
 
 from ui_style import (
     ACCENT, APP_VERSION, BUILD_LABEL, LOGO_PATH, ON_SURFACE, ON_SURFACE_VARIANT,
-    primary_button, screen_header, section_card, tonal_button,
+    screen_header, section_card,
 )
 
 DEVELOPER_NAME = "SumClarTech"
@@ -37,7 +37,7 @@ class _LinkRow(ButtonBehavior, MDBoxLayout):
     def __init__(self, icon: str, label: str, **kwargs):
         kwargs.setdefault("spacing", dp(10))
         kwargs.setdefault("size_hint_y", None)
-        kwargs.setdefault("height", dp(40))
+        kwargs.setdefault("height", dp(48))
         super().__init__(**kwargs)
         icon_cell = AnchorLayout(anchor_x="center", anchor_y="center", size_hint=(None, 1), width=dp(22))
         icon_cell.add_widget(MDIcon(
@@ -169,7 +169,7 @@ class AboutScreen(MDScreen):
         self._tier_row.children[1].text = plan_text
         self._upgrade_row.opacity = 0 if is_pro else 1
         self._upgrade_row.disabled = is_pro
-        self._upgrade_row.height = 0 if is_pro else dp(40)
+        self._upgrade_row.height = 0 if is_pro else dp(48)
         self._upgrade_row.size_hint_y = None
 
     def _show_tier_details(self) -> None:

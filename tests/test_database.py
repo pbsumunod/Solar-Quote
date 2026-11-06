@@ -35,3 +35,13 @@ def test_update_missing_project_reports_failure(tmp_path):
     fields = Project(client_name="Missing", monthly_kwh=300).to_fields()
     with pytest.raises(LookupError):
         database.update_project(99999, fields)
+
+
+def test_import_rejects_pathologically_nested_backup_without_crashing(tmp_path):
+    database.configure(str(tmp_path))
+    database.init_db()
+    backup = tmp_path / "deep.json"
+    backup.write_text("[" * 200000, encoding="utf-8")
+    with pytest.raises(ValueError):
+        database.import_projects(str(backup))
+    assert database.count_projects() == 0

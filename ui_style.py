@@ -7,7 +7,6 @@ painted on every interactive element. See the "SolarQuote Client Screen" design
 mockup for the reference layout this module implements in Kivy.
 """
 
-from datetime import date
 
 from kivy.clock import Clock
 from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
@@ -18,7 +17,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.image import Image
 from kivy.uix.widget import Widget
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDFillRoundFlatButton, MDFillRoundFlatIconButton, MDIconButton, MDRoundFlatButton
+from kivymd.uix.button import MDFillRoundFlatButton, MDIconButton, MDRoundFlatButton
 from kivymd.uix.label import MDIcon, MDLabel
 from kivymd.uix.textfield import MDTextField
 
@@ -311,6 +310,12 @@ def m3_field(hint_text: str, icon: str | None = None, field_class=MDTextField, *
         kwargs.setdefault("icon_left_color_focus", ACCENT)
     field = field_class(hint_text=hint_text, **kwargs)
 
+    if kwargs.get("input_filter") in ("float", "int"):
+        # Numeric fields are pre-filled ("0.00", "14.50"); without this, typing
+        # "450" into "0.00" appends to give "0.00450" (a silent 0.0045 kWh).
+        # Selecting everything on focus makes the first keystroke replace it.
+        field.bind(focus=lambda f, focused: Clock.schedule_once(lambda _dt: f.select_all(), 0.05) if focused else None)
+
     def fit_parent(*_args):
         parent = field.parent
         if not isinstance(parent, BoxLayout) or parent.size_hint_y is not None:
@@ -488,7 +493,7 @@ def tonal_button(text: str, on_release=None, **kwargs) -> MDFillRoundFlatButton:
     tonal fill so it doesn't compete with the screen's primary_button."""
     kwargs.setdefault("size_hint_x", 1)
     kwargs.setdefault("size_hint_y", None)
-    kwargs.setdefault("height", dp(44))
+    kwargs.setdefault("height", dp(48))
     btn = MDFillRoundFlatButton(text=text, md_bg_color=ACCENT_LIGHT, text_color=ON_PRIMARY_CONTAINER, **kwargs)
     if on_release:
         btn.bind(on_release=lambda *_a: on_release())
@@ -499,7 +504,7 @@ def outlined_button(text: str, on_release=None, danger: bool = False, **kwargs) 
     """A low-emphasis action (New, Duplicate, Delete) -- outline only, no fill."""
     color = BAD_RED if danger else ACCENT
     kwargs.setdefault("size_hint_y", None)
-    kwargs.setdefault("height", dp(40))
+    kwargs.setdefault("height", dp(48))
     btn = MDRoundFlatButton(text=text, line_color=color, text_color=color, **kwargs)
     if on_release:
         btn.bind(on_release=lambda *_a: on_release())
@@ -840,7 +845,7 @@ def show_paywall(screen, reason: str = "", on_change=None) -> None:
     for button in buttons:
         button.size_hint_x = 1
         button.size_hint_y = None
-        button.height = dp(44)
+        button.height = dp(48)
         btn_col.add_widget(button)
     btn_col.bind(minimum_height=btn_col.setter("height"))
     content.add_widget(btn_col)

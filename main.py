@@ -324,6 +324,10 @@ class SolarClientFinderApp(MDApp):
             self.billing.refresh_on_resume()
         self._install_android_insets_listener()
         Clock.schedule_once(lambda _dt: self._screen_manager.refresh_plan_label())
+        # After HOME + relaunch the GL surface can be recreated without a redraw (black screen,
+        # audit SOLARQUOTE-E-003). Ask the canvas to repaint a few times as the surface settles.
+        for delay in (0, 0.25, 0.75):
+            Clock.schedule_once(lambda _dt: Window.canvas.ask_update(), delay)
 
     def on_stop(self):
         self._preserve_draft()

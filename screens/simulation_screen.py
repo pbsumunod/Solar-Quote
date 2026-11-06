@@ -15,7 +15,6 @@ feed the energy-conserving steady-state calculation in logic/simulation.py.
 from kivy.animation import Animation
 from kivy.metrics import dp
 from kivy.uix.anchorlayout import AnchorLayout
-from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp

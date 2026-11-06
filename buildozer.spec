@@ -9,11 +9,11 @@ source.exclude_dirs = tests, backend, scripts, recipes, docs, assets/icon, asset
 source.exclude_patterns = p4a_hooks.py, assets/feature_graphic.png, assets/SolarQuote_Icon_512x512.png
 
 # User-visible version for this release.
-version = 1.1.1
+version = 1.1.2
 
-# Explicit versionCode increases the previous repository value, 1024113.
+# Explicit versionCode increases the previous repository value, 1024114.
 # Increase it for each subsequent Play upload, across all release tracks.
-android.numeric_version = 1024114
+android.numeric_version = 1024115
 requirements = certifi==2026.7.22,chardet==5.2.0,python3==3.11.9,hostpython3==3.11.9,kivy==2.3.1,kivymd==1.2.0,sqlite3,openpyxl==3.1.5,et_xmlfile==2.0.0,fpdf2==2.7.9,fonttools==4.65.0,defusedxml==0.7.1,Pillow==12.3.0,lxml==5.2.2,python-pptx==1.0.2,typing_extensions==4.16.0,plyer==2.1.0
 
 orientation = portrait

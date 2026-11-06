@@ -49,7 +49,9 @@ def before_apk_assemble(toolchain):
     manifest_path = os.path.join("src", "main", "AndroidManifest.xml")
     namespace = "http://schemas.android.com/apk/res/android"
     ET.register_namespace("android", namespace)
-    attribute = lambda name: "{" + namespace + "}" + name
+    def attribute(name):
+        return "{" + namespace + "}" + name
+
     tree = ET.parse(manifest_path)
     application = tree.getroot().find("application")
     if application is None:

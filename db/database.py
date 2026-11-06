@@ -237,7 +237,10 @@ def import_projects(path: str, max_new_projects: int | None = None) -> list[int]
     target = Path(path)
     if target.stat().st_size > 20 * 1024 * 1024:
         raise ValueError("Backup exceeds 20 MB.")
-    data = json.loads(target.read_text(encoding="utf-8-sig"))
+    try:
+        data = json.loads(target.read_text(encoding="utf-8-sig"))
+    except RecursionError as exc:  # pathologically nested JSON must not crash the app
+        raise ValueError("This is not a supported SolarQuote project backup.") from exc
     if not isinstance(data, dict) or data.get("format") != "solarquote-projects" or data.get("version") != 1:
         raise ValueError("This is not a supported SolarQuote project backup.")
     records = data.get("projects")
